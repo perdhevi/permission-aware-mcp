@@ -9,6 +9,14 @@ PostgreSQL identity lookup and `whoami`. It deliberately stops before roles, ACL
 The broader roadmap is preserved in [PROJECT_SPEC.md](PROJECT_SPEC.md); the limited
 scope above governs this implementation.
 
+## Phase implementation guides
+
+Each implementation phase has a detailed change record and reproducible validation
+guide. Keep these documents updated as the corresponding implementation changes:
+
+- [Phase 00 — project skeleton and database](docs/phase-00.md)
+- [Phase 01 — authentication and whoami](docs/phase-01.md)
+
 ## Requirements and setup
 
 Use Go 1.27.1 or later and Docker Compose v2 with a running Docker engine.

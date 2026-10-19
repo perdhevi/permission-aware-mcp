@@ -2,3 +2,6 @@
 .env
 *.exe
 coverage.out
+.idea
+AGENTS.md
+PROJECT_SPEC.md
