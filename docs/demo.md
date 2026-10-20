@@ -30,5 +30,13 @@ arguments are rejected on both tools.
 
 Automated tests cover these boundaries and both current and legacy protocol
 clients. Enable `TEST_DATABASE_URL` to run the real database permission matrix,
-revocation and cross-tenant tests. Semantic search and the complete prompt-injection
-retrieval demo follow in later phases.
+revocation and cross-tenant tests.
+
+For Phase 3, apply migration 003 and run `go run ./cmd/ingest --tenant acme`.
+Follow the README search example with query `salary` and limit 20. Switch tokens
+between Alice, Bob, Carol and Dave: expect 2, 2, 4 and 1 authorized chunks. Alice
+receives no Salary Guidelines title or content, even though it is an exact lexical
+match. With query `deployment automation`, Alice can retrieve Engineering Roadmap;
+Bob cannot. The offline hash embedder has no relevance threshold, so other allowed
+chunks can appear. It is a policy demo rather than a language-understanding model.
+See [Phase 03](phase-03.md). The audited prompt-injection demo follows in Phase 4.

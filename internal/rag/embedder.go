@@ -1,9 +1,9 @@
-// Package rag holds contracts for future permission-filtered retrieval.
+// Package rag implements permission-filtered retrieval and local ingestion.
 package rag
 
 import "context"
 
-// Embedder is a future provider contract; Phase 1 has no implementation.
+// Embedder supplies compatible vectors for queries and documents.
 type Embedder interface {
 	EmbedQuery(context.Context, string) ([]float32, error)
 	EmbedDocuments(context.Context, []string) ([][]float32, error)

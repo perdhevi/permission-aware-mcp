@@ -16,6 +16,7 @@ import (
 	"permission-aware-mcp/internal/authn"
 	"permission-aware-mcp/internal/authz"
 	"permission-aware-mcp/internal/domain"
+	"permission-aware-mcp/internal/rag"
 	"permission-aware-mcp/internal/repository"
 )
 
@@ -62,8 +63,17 @@ func (resourceDocuments) GetReadable(_ context.Context, tenant, user, id string,
 	}
 	return &domain.Document{DocumentID: id, Title: "Visible", Content: string(text), Truncated: truncated}, nil
 }
+func (resourceDocuments) SearchReadable(_ context.Context, tenant, user, vector, model string, dimensions, limit int) ([]domain.SearchResult, error) {
+	if tenant != "00000000-0000-0000-0000-000000000002" {
+		return nil, errors.New("wrong tenant")
+	}
+	if strings.HasSuffix(user, "4") {
+		return nil, nil
+	}
+	return []domain.SearchResult{{ChunkID: docID, DocumentID: docID, Title: "Visible", Content: "Visible content", Distance: 0.25}}, nil
+}
 func TestHTTPDocumentBoundary(t *testing.T) {
-	srv := httptest.NewServer(New(resourceVerifier{}, authn.NewResolver(resourceUsers{}), ping{}, "knowledge:read", authz.New(resourceDocuments{}), slog.New(slog.NewTextHandler(io.Discard, nil))))
+	srv := httptest.NewServer(New(resourceVerifier{}, authn.NewResolver(resourceUsers{}), ping{}, "knowledge:read", authz.New(resourceDocuments{}), rag.NewRetriever(resourceDocuments{}, rag.HashEmbedder{}), slog.New(slog.NewTextHandler(io.Discard, nil))))
 	defer srv.Close()
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, subject := range []string{"alice", "bob", "alice"} {
@@ -100,6 +110,14 @@ func TestHTTPDocumentBoundary(t *testing.T) {
 			if len(out.Sources) != want {
 				t.Fatalf("%s: %s", subject, b)
 			}
+			search := call("search_knowledge", map[string]any{"query": "deployment"})
+			b, _ = json.Marshal(search.StructuredContent)
+			var found struct {
+				Results []domain.SearchResult `json:"results"`
+			}
+			if err := json.Unmarshal(b, &found); err != nil || search.IsError || len(found.Results) != want || found.Results == nil {
+				t.Fatalf("%s search: %s %v", subject, b, err)
+			}
 			result = call("get_document", map[string]any{"document_id": docID, "max_chars": 3})
 			if result.IsError != (subject == "bob") {
 				t.Fatalf("%s direct result: %+v", subject, result)
@@ -118,6 +136,16 @@ func TestHTTPDocumentBoundary(t *testing.T) {
 				name string
 				args map[string]any
 			}{
+				{"search_knowledge", map[string]any{}},
+				{"search_knowledge", map[string]any{"query": ""}},
+				{"search_knowledge", map[string]any{"query": "  "}},
+				{"search_knowledge", map[string]any{"query": strings.Repeat("界", 4001)}},
+				{"search_knowledge", map[string]any{"query": "salary", "role": "executive"}},
+				{"search_knowledge", map[string]any{"query": "salary", "user_id": "carol"}},
+				{"search_knowledge", map[string]any{"query": "salary", "tenant_id": "other"}},
+				{"search_knowledge", map[string]any{"query": "salary", "limit": 0}},
+				{"search_knowledge", map[string]any{"query": "salary", "limit": 21}},
+				{"search_knowledge", map[string]any{"query": "salary", "limit": 1.5}},
 				{"list_accessible_sources", map[string]any{"role": "executive"}},
 				{"list_accessible_sources", map[string]any{"limit": 0}},
 				{"list_accessible_sources", map[string]any{"limit": 101}},

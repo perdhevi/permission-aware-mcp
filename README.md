@@ -4,9 +4,10 @@ A Go MCP server demonstrating authentication and authorization for permission-aw
 retrieval. **The LLM cannot select its own user identity or role.** Caller identity
 comes exclusively from a verified bearer token; the database supplies tenant membership.
 
-Implemented through Phase 2: RS256 development authentication, PostgreSQL identity
+Implemented through Phase 3: RS256 development authentication, PostgreSQL identity
 and role lookup, tenant isolation, document ACLs, `whoami`,
-`list_accessible_sources`, and `get_document`. Semantic retrieval follows in Phase 3.
+`list_accessible_sources`, `get_document`, and permission-filtered `search_knowledge`.
+An offline hash embedder and ingestion CLI provide reproducible pgvector retrieval.
 The broader roadmap is preserved in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## Phase implementation guides
@@ -17,6 +18,7 @@ guide. Keep these documents updated as the corresponding implementation changes:
 - [Phase 00 — project skeleton and database](docs/phase-00.md)
 - [Phase 01 — authentication and whoami](docs/phase-01.md)
 - [Phase 02 — roles and document authorization](docs/phase-02.md)
+- [Phase 03 — ingestion and permission-filtered retrieval](docs/phase-03.md)
 
 ## Requirements and setup
 
@@ -25,6 +27,7 @@ Run commands from the repository root:
 
 ```sh
 docker compose up -d --wait
+go run ./cmd/ingest --tenant acme
 go run ./cmd/devtoken keygen
 go run ./cmd/devtoken mint --subject alice
 go run ./cmd/server
@@ -33,9 +36,9 @@ go run ./cmd/server
 The server listens at `http://127.0.0.1:8080/mcp`. Health endpoints are
 `GET /healthz` (process) and `GET /readyz` (database connectivity).
 Compose binds PostgreSQL to localhost:5432 and persists data in a named volume.
-On first initialization it applies both SQL migrations, enables pgvector, and seeds
+On first initialization it applies all three SQL migrations, enables pgvector, and seeds
 tenant `acme`, active users `alice`, `bob`, `carol`, `dave`, roles and four documents.
-**Existing phase 1 databases need migration 002 before starting the updated server.**
+**Existing databases need any missing migrations (002, then 003) before ingestion.**
 Migrations do not rerun on an existing volume. See [seed notes](seed/README.md)
 for the explicit upgrade command; preserve your database volume.
 
@@ -106,7 +109,8 @@ go test ./...
 
 Tests exercise authentication, database roles, strict tool arguments, caller
 isolation through both SDK protocol revisions, authorized listing/direct reads,
-revocation, cross-tenant constraints, and Unicode content limits.
+permission-filtered ranking, ingestion, revocation, cross-tenant constraints,
+and Unicode content limits.
 Database tests skip unless `TEST_DATABASE_URL` is set. Run them against the local
 Compose database with PowerShell:
 
@@ -156,6 +160,34 @@ flag. Missing and forbidden documents both produce the MCP tool error
 Roles have no implicit hierarchy or global bypass. The seed explicitly grants
 Company Handbook to all four roles and each confidential document to its readers.
 
+## Search authorized knowledge
+
+After migration 003, run `go run ./cmd/ingest --tenant acme` to replace chunks for
+the existing database documents. This trusted CLI uses database credentials and
+preserves document IDs and ACLs. Repeat it after content changes. It is not an MCP tool.
+Using the request variables from the examples above:
+
+```powershell
+$headers['Mcp-Name'] = 'search_knowledge'
+$request.params.name = 'search_knowledge'
+$request.params.arguments = @{ query = 'deployment automation'; limit = 5 }
+$body = $request | ConvertTo-Json -Depth 8
+$search = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Headers $headers -ContentType application/json -Body $body
+$search.result.structuredContent.results
+```
+
+Search requires a nonblank query of at most 4000 Unicode characters. Limit defaults
+to 5 (1–20). Results contain chunk/document UUIDs, title, content and cosine distance
+(lower is closer). Tenant and current ACLs filter candidates **before** exact ranking.
+No count or unauthorized metadata is returned. With `limit = 20`, the seeded corpus
+returns 2/2/4/1 chunks for Alice/Bob/Carol/Dave; Alice never receives Salary Guidelines.
+
+The fixed `dev-hash-v1` embedder uses 128 normalized word-hash buckets. It needs no
+API keys or external service, but has lexical overlap and hash collisions rather
+than language understanding. There is no relevance threshold, so unrelated authorized
+chunks may appear. Retrieved text is untrusted data. See the [Phase 03 guide](docs/phase-03.md)
+for ingestion transactions, stale-content handling and full validation instructions.
+
 ## Architecture and next phase
 
 JWT validation → identity → database principal → MCP tool → authorization service
@@ -165,6 +197,6 @@ Tools contain no SQL. Every HTTP request revalidates the token and database user
 token information, never tool arguments or client metadata.
 
 See [architecture](docs/architecture.md), [security](docs/security.md) and
-[demo](docs/demo.md). Phase 3 adds permission-filtered semantic retrieval and
-ingestion. Embeddings, search, persistent audit storage and production OAuth
-remain deferred.
+[demo](docs/demo.md). Phase 4 adds persistent audit storage and the host-driven
+prompt-injection demonstration. Language-model embedding providers and production
+OAuth remain deferred.

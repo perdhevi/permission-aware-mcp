@@ -20,7 +20,7 @@ User Repository (issuer + subject lookup)
 Principal (database user ID, tenant, roles, token scopes)
    |
    v
-MCP Tools (whoami, list_accessible_sources, get_document)
+MCP Tools (whoami, list_accessible_sources, get_document, search_knowledge)
 ```
 
 `internal/authn` validates tokens and resolves an active local identity. The
@@ -67,11 +67,22 @@ listing and direct reads, before ordering and limiting.
 Composite foreign keys prevent cross-tenant role assignments and ACL grants.
 ACLs use exactly one nullable `user_id` or `role_id` with real foreign keys rather
 than an unchecked polymorphic UUID. No role has implicit privileges.
-`internal/rag.Embedder` remains a future contract; ingestion and semantic retrieval
-are deferred to Phase 3.
+`internal/rag.Embedder` has a deterministic offline `dev-hash-v1` implementation
+with 128 normalized word-hash buckets. `rag.Retriever` validates the principal,
+query and limit, embeds the query, validates the vector, then calls the repository.
+Search shares the exact document read predicate. A materialized authorized CTE
+precedes cosine ranking and LIMIT, with no approximate index or post-filtering.
+Model and dimensions must match. Content hashes exclude stale chunks after edits.
 
-Compose applies 001 and 002 on a fresh volume. Existing phase 1 databases must
-apply 002 explicitly following [seed notes](../seed/README.md). Migrations are
+The trusted `cmd/ingest --tenant acme` CLI reads existing database documents,
+splits them into 1000-character windows with 100-character overlap, and replaces
+chunks under a per-document transaction and row lock. IDs and ACLs are preserved.
+It is repeatable without duplicate chunks; chunk UUIDs change on replacement.
+Failure rolls back that document; earlier committed documents remain ingested.
+The server never performs generation or ingests client-supplied documents.
+
+Compose applies 001, 002 and 003 on a fresh volume. Existing databases must
+apply missing migrations explicitly following [seed notes](../seed/README.md). Migrations are
 transactional, ordered SQL files; there is no automatic version runner. Startup
 checks connectivity, so schema validation remains an operator prerequisite.
 
