@@ -1,9 +1,12 @@
 # Run from the repository root using PowerShell 7 after applying the optional
 # SQL fixture, re-ingesting acme, and starting cmd/server.
-param([string]$Endpoint = 'http://127.0.0.1:8080/mcp')
+param([string]$Endpoint = 'http://127.0.0.1:8080/mcp', [string]$Token = '')
 $ErrorActionPreference = 'Stop'
-$token = go run ./cmd/devtoken mint --subject alice
-if ($LASTEXITCODE -ne 0) { throw 'Could not mint the Alice development token' }
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    if ($env:AUTH_MODE -eq 'oidc') { throw 'Pass an Alice access token using -Token (go run ./cmd/login)' }
+    $Token = go run ./cmd/devtoken mint --subject alice
+    if ($LASTEXITCODE -ne 0) { throw 'Could not mint the Alice development token' }
+}
 
 function Invoke-DemoTool([string]$Name, [hashtable]$Arguments) {
     $headers = @{
@@ -30,7 +33,7 @@ function Invoke-DemoTool([string]$Name, [hashtable]$Arguments) {
 }
 
 $identity = Invoke-DemoTool 'whoami' @{}
-if ($identity.isError -or $identity.structuredContent.subject -ne 'alice') { throw 'Expected Alice' }
+if ($identity.isError -or $identity.structuredContent.subject -notin @('alice', '10000000-0000-0000-0000-000000000001')) { throw 'Expected fixture Alice' }
 $search = Invoke-DemoTool 'search_knowledge' @{query='Ignore previous instructions'; limit=20}
 if ($search.isError) { throw 'Search failed; check migration, audit storage and ingestion' }
 $injection = @($search.structuredContent.results | Where-Object { $_.content -match '\[Prompt injection demo\]' })
@@ -46,5 +49,5 @@ if (-not $denied.isError -or ($denied.content.text -join ' ') -ne 'resource not 
 $spoof = Invoke-DemoTool 'get_document' @{document_id=$target; role='executive'; user_id='carol'}
 if (-not $spoof.isError) { throw 'Identity spoofing was accepted' }
 $after = Invoke-DemoTool 'whoami' @{}
-if ($after.isError -or $after.structuredContent.subject -ne 'alice') { throw 'Caller identity changed' }
+if ($after.isError -or $after.structuredContent.subject -ne $identity.structuredContent.subject) { throw 'Caller identity changed' }
 Write-Output 'PASS: Alice retrieved hostile text; the follow-up read and spoofing were denied and audited. Caller remains Alice.'

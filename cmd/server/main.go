@@ -32,16 +32,24 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	key, err := authn.LoadPublicKey(c.PublicKeyFile)
-	if err != nil {
-		return errors.New("cannot load development public key; run go run ./cmd/devtoken keygen")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	var verifier authn.TokenVerifier
+	var discovery []mcpserver.OAuthDiscovery
+	if c.AuthMode == "oidc" {
+		verifier, err = authn.NewOIDC(ctx, c.Issuer, c.Audience, c.RequiredScope)
+		discovery = []mcpserver.OAuthDiscovery{{Resource: c.ResourceURL, Issuer: c.Issuer}}
+	} else {
+		var keyErr error
+		key, keyErr := authn.LoadPublicKey(c.PublicKeyFile)
+		if keyErr != nil {
+			return errors.New("cannot load development public key; run go run ./cmd/devtoken keygen")
+		}
+		verifier, err = authn.NewDevJWT(key, c.Issuer, c.Audience, c.RequiredScope)
 	}
-	verifier, err := authn.NewDevJWT(key, c.Issuer, c.Audience, c.RequiredScope)
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	pool, err := pgxpool.New(ctx, c.DatabaseURL)
 	if err != nil {
 		return errors.New("invalid database configuration")
@@ -55,7 +63,7 @@ func run(logger *slog.Logger) error {
 	}
 	server := &http.Server{
 		Addr:              c.HTTPAddr,
-		Handler:           mcpserver.New(verifier, authn.NewResolver(postgres.NewUsers(pool)), pool, c.RequiredScope, authz.New(postgres.NewDocuments(pool)), rag.NewRetriever(postgres.NewDocuments(pool), rag.HashEmbedder{}), logger, postgres.NewAudit(pool)),
+		Handler:           mcpserver.New(verifier, authn.NewResolver(postgres.NewUsers(pool)), pool, c.RequiredScope, authz.New(postgres.NewDocuments(pool)), rag.NewRetriever(postgres.NewDocuments(pool), rag.HashEmbedder{}), logger, postgres.NewAudit(pool), discovery...),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

@@ -4,7 +4,8 @@
    empty object, with `additionalProperties: false`. Identity fields are absent
    from its input schema. Client metadata cannot populate SDK token information.
 2. Caller identity comes exclusively from bearer-token authentication. The verifier
-   pins RS256 and a configured RSA public key (at least 2048 bits), and requires a
+   pins RS256 and either a configured development RSA public key (at least 2048 bits)
+   or OIDC-discovered JWKS, and requires a
    valid signature, issuer, audience, expiration, nonblank subject and exact scope.
    Present `nbf` claims are also validated. Unknown signing algorithms are rejected.
 3. Tenant membership is derived from the database lookup by `(issuer, subject)`.
@@ -68,10 +69,27 @@ Chunk foreign keys bind tenant and document. Source-content hashes exclude stale
 chunks until re-ingestion; MD5 is an operational change detector, not a security
 signature against a malicious database administrator. Database administrators remain trusted.
 
-This milestone intentionally supports development mode only. Keep the server and
-database on localhost. Use HTTPS and a real OAuth/OIDC resource-server integration
-before network deployment. The development issuer is an identifier, not an OAuth
-authorization server; discovery, token revocation, rotation and login flows are future work.
+This milestone supports local development deployments with either dev JWTs or
+real Keycloak OIDC/OAuth. Keep the server and database on localhost. The local
+Keycloak profile uses public fixture credentials and `start-dev`; it is not a
+production identity service. OIDC uses configured issuer discovery, bounded HTTP,
+no redirects, RS256 JWT signature/claim checks and payload `typ=Bearer` to reject
+Keycloak ID tokens. Cleartext provider URLs are allowed only on literal loopback
+hosts; HTTPS issuers cannot downgrade JWKS to HTTP. The library applies up to two
+minutes of clock skew for `nbf`. Errors omit raw parser/network/claim diagnostics.
+
+OAuth scope grants entry, never tenant or document privileges. The canonical
+resource URL must match the token audience. Public protected-resource metadata
+and bearer challenges use operator configuration, not forwarded/Host headers.
+The PKCE CLI uses random state, S256 and an exact loopback redirect; direct password
+grants are disabled. Other hosts need explicitly registered clients/callbacks.
+No token introspection, refresh persistence or immediate logout/revocation exists.
+Cached known keys can verify tokens during provider outages or after issuer key
+removal until expiry; new keys need a successful refresh. Unknown-key traffic may
+cause refresh load; rate limiting remains deferred. Local deactivation is immediate
+on the next request. See [Phase 05](phase-05.md) for the supported provider profile.
+
+In optional dev mode the issuer is only an identifier, not an OAuth server.
 Deleting a private key does not revoke tokens already signed with it; changing the
 configured verification key requires server restart. Keep local key files private;
 Windows requires ACLs because Go's Unix file modes do not enforce Windows permissions.

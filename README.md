@@ -4,7 +4,7 @@ A Go MCP server demonstrating authentication and authorization for permission-aw
 retrieval. **The LLM cannot select its own user identity or role.** Caller identity
 comes exclusively from a verified bearer token; the database supplies tenant membership.
 
-Implemented through Phase 4: RS256 development authentication, PostgreSQL identity
+Implemented through Phase 5: Keycloak OIDC/OAuth and optional RS256 development authentication, PostgreSQL identity
 and role lookup, tenant isolation, document ACLs, `whoami`,
 `list_accessible_sources`, `get_document`, and permission-filtered `search_knowledge`.
 An offline hash embedder and ingestion CLI provide reproducible pgvector retrieval.
@@ -22,17 +22,28 @@ guide. Keep these documents updated as the corresponding implementation changes:
 - [Phase 02 — roles and document authorization](docs/phase-02.md)
 - [Phase 03 — ingestion and permission-filtered retrieval](docs/phase-03.md)
 - [Phase 04 — audit and security demo](docs/phase-04.md)
+- [Phase 05 — Keycloak OIDC/OAuth and discovery](docs/phase-05.md)
 
 ## Requirements and setup
 
 Use Go 1.27.1 or later and Docker Compose v2 with a running Docker engine.
 Run commands from the repository root:
 
+The normal demo uses Keycloak authorization code with PKCE. Follow the
+[Phase 05 setup](docs/phase-05.md#ordered-validation-commands-and-expected-results)
+to start the optional `oidc` Compose profile, load local OIDC users, export the
+four authentication settings, and run the server. In a second configured terminal,
+run `$token = go run ./cmd/login`, open the printed URL, and sign in as `alice`
+with the local fixture password `local-demo-only`. The command prints only the
+access token to stdout; browser instructions go to stderr. No local signing keys
+are needed. Use the same request examples below with that token.
+
+For the earlier offline authentication demo, leave `AUTH_MODE=dev` (the default):
+
 ```sh
 docker compose up -d --wait
 go run ./cmd/ingest --tenant acme
 go run ./cmd/devtoken keygen
-go run ./cmd/devtoken mint --subject alice
 go run ./cmd/server
 ```
 
@@ -48,8 +59,10 @@ for the explicit upgrade command; preserve your database volume.
 Configuration uses environment variables; `.env.example` lists the development
 defaults. The Go commands do **not** automatically load `.env` files. Export values
 in your shell when overriding defaults. `APP_ENV` values other than `development`
-and authentication modes other than `dev` fail startup. This server is not a
-production OAuth deployment.
+and authentication modes other than `dev` or `oidc` fail startup. OIDC uses
+discovery/JWKS from the configured issuer, validates resource audience and required
+scope, and exposes Protected Resource Metadata in the 401 challenge. This remains
+a local development deployment; see Phase 05 for the provider profile and limitations.
 
 Key generation refuses to overwrite either existing key. Keys and `.env` are
 gitignored. Private keys use mode 0600 and the directory uses 0700 on systems
@@ -71,7 +84,9 @@ Call `whoami` with `{}`. Unexpected arguments are rejected by its schema.
 PowerShell example, in a second terminal while the server runs:
 
 ```powershell
-$token = go run ./cmd/devtoken mint --subject alice
+# In OIDC mode, open the URL printed by this command and sign in as Alice:
+$token = go run ./cmd/login
+# For optional AUTH_MODE=dev instead: $token = go run ./cmd/devtoken mint --subject alice
 $headers = @{
   Authorization = "Bearer $token"
   Accept = 'application/json, text/event-stream'
@@ -97,7 +112,7 @@ $reply = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Headers 
 $reply.result.structuredContent
 ```
 
-Expect the seeded user's UUID, subject `alice`, tenant `acme`, and scope
+Expect the seeded user's UUID, Alice's Keycloak subject (or `alice` in dev mode), tenant `acme`, and scope
 `knowledge:read`, and database role `engineering`. No token or signing data is returned. Omitting the bearer token
 or using an invalid token returns HTTP 401. Unknown and inactive users also receive
 401. JWTs without the configured scope fail authentication with 401; this verifier
@@ -210,4 +225,6 @@ For the optional hostile engineering-document fixture and reproducible host demo
 see [Phase 04](docs/phase-04.md) and [demo](docs/demo.md). Existing ACLs still deny
 Alice's attempt to read Salary Guidelines, and that denial is persisted.
 See [architecture](docs/architecture.md) and [security](docs/security.md).
-Phase 5 adds real OIDC/OAuth. Language-model embedding providers remain deferred.
+Phase 5 adds Keycloak discovery, JWT access-token verification, resource metadata
+and browser PKCE login; see its guide above. Phase 6 defense-in-depth work and
+language-model embedding providers remain deferred.

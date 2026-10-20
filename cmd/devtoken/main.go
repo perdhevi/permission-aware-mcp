@@ -68,6 +68,9 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		if c.AuthMode != "dev" {
+			return errors.New("devtoken mint requires AUTH_MODE=dev; use cmd/login for OIDC")
+		}
 		fs := flag.NewFlagSet("mint", flag.ContinueOnError)
 		subject := fs.String("subject", "", "required external subject")
 		keyPath := fs.String("key", ".local/keys/private.pem", "private key")

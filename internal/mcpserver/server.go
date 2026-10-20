@@ -7,10 +7,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"permission-aware-mcp/internal/audit"
 	"permission-aware-mcp/internal/authn"
@@ -21,7 +23,10 @@ import (
 
 type Pinger interface{ Ping(context.Context) error }
 
-func New(verifier authn.TokenVerifier, resolver *authn.Resolver, db Pinger, scope string, authorization *authz.Service, retrieval *rag.Retriever, logger *slog.Logger, store audit.Store) http.Handler {
+// OAuthDiscovery contains operator-configured canonical URLs, never request headers.
+type OAuthDiscovery struct{ Resource, Issuer string }
+
+func New(verifier authn.TokenVerifier, resolver *authn.Resolver, db Pinger, scope string, authorization *authz.Service, retrieval *rag.Retriever, logger *slog.Logger, store audit.Store, discovery ...OAuthDiscovery) http.Handler {
 	s := mcp.NewServer(&mcp.Implementation{Name: "permission-aware-mcp", Version: "0.1.0"}, nil)
 	tools.RegisterWhoami(s)
 	tools.RegisterDocuments(s, authorization)
@@ -48,7 +53,20 @@ func New(verifier authn.TokenVerifier, resolver *authn.Resolver, db Pinger, scop
 		return &auth.TokenInfo{UserID: p.UserID, Scopes: p.Scopes, Expiration: id.ExpiresAt, Extra: map[string]any{tools.PrincipalKey: p}}, nil
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{Scopes: []string{scope}})(transport))
+	opts := &auth.RequireBearerTokenOptions{Scopes: []string{scope}}
+	if len(discovery) > 0 {
+		d := discovery[0]
+		u, err := url.Parse(d.Resource)
+		if err != nil || !authn.ValidProviderURL(d.Resource) || u.Path != "/mcp" || !authn.ValidProviderURL(d.Issuer) {
+			panic("invalid OAuth discovery configuration")
+		}
+		origin := u.Scheme + "://" + u.Host
+		opts.ResourceMetadataURL = origin + "/.well-known/oauth-protected-resource/mcp"
+		metadata := auth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{Resource: d.Resource, AuthorizationServers: []string{d.Issuer}, ScopesSupported: []string{scope}, BearerMethodsSupported: []string{"header"}})
+		mux.Handle("/.well-known/oauth-protected-resource/mcp", metadata)
+		mux.Handle("/.well-known/oauth-protected-resource", metadata)
+	}
+	mux.Handle("/mcp", auth.RequireBearerToken(verify, opts)(transport))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))

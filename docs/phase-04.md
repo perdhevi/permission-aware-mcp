@@ -195,6 +195,14 @@ was performed.
 
 ## Limitations and deferred work
 
+Phase 5 compatibility update: `seed/prompt-injection-demo.ps1` now accepts
+`-Token $token` for Alice's Keycloak access token, recognizes the fixture's stable
+subject, and checks the final subject against the initial authenticated subject.
+Without a token it preserves dev minting; OIDC mode requires an explicit token.
+The changed script was syntax-checked during Phase 5; that new branch was not
+executed as a full PowerShell/Keycloak demo. The earlier Phase 4 validation record
+above remains historical. See [Phase 05](phase-05.md) for actual OIDC test results.
+
 Development authentication, a small exact-search corpus, and trusted DB operators
 remain the scope. No production OAuth, administrative audit MCP tool, audit export,
 retention/deletion policy, immutable storage, separate audit credentials, retries,

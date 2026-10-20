@@ -1,6 +1,6 @@
 # Architecture
 
-Implemented:
+Implemented through Phase 5:
 
 ```text
 MCP Client
@@ -28,6 +28,21 @@ MCP Tools (whoami, list_accessible_sources, get_document, search_knowledge)
 adapter joins tenants using the user's database foreign key and uses parameterized SQL.
 Unknown or inactive identities fail closed; database failures return a generic 500.
 These are identity eligibility checks, not document authorization policy.
+
+In `AUTH_MODE=oidc`, Keycloak is the external authorization server. The resource
+server discovers its issuer/JWKS and verifies RS256 Keycloak Bearer access tokens
+through coreos/go-oidc. The same local resolver, policy queries and audit middleware
+serve both auth modes. Signing keys are cached and refreshed on unknown keys;
+provider HTTP calls are bounded. OIDC startup never loads development PEM files.
+The optional `oidc` Compose profile imports a development realm with stable subjects.
+An explicit SQL fixture provisions separate OIDC identities and existing local roles.
+
+The SDK serves RFC 9728 metadata at root and resource-specific well-known paths,
+and links it in unauthenticated bearer challenges. Configured URLs, not Host headers,
+identify the resource and issuer. `cmd/login` uses a pre-registered public client,
+random state, browser authorization code and S256 PKCE with a fixed loopback callback.
+The audience is the canonical MCP resource URL. See [Phase 05](phase-05.md) for
+the provider profile, full setup and limitations.
 
 `internal/mcpserver` adapts verification to official SDK bearer middleware and
 Streamable HTTP. `TokenInfo.UserID` is the database user UUID, not a client value.

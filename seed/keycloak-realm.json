@@ -1,0 +1,123 @@
+{
+  "users": [
+    {
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ],
+      "username": "alice",
+      "lastName": "Demo",
+      "emailVerified": true,
+      "id": "10000000-0000-0000-0000-000000000001",
+      "email": "alice@example.test",
+      "enabled": true,
+      "firstName": "alice"
+    },
+    {
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ],
+      "username": "bob",
+      "lastName": "Demo",
+      "emailVerified": true,
+      "id": "10000000-0000-0000-0000-000000000002",
+      "email": "bob@example.test",
+      "enabled": true,
+      "firstName": "bob"
+    },
+    {
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ],
+      "username": "carol",
+      "lastName": "Demo",
+      "emailVerified": true,
+      "id": "10000000-0000-0000-0000-000000000003",
+      "email": "carol@example.test",
+      "enabled": true,
+      "firstName": "carol"
+    },
+    {
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-demo-only",
+          "temporary": false
+        }
+      ],
+      "username": "dave",
+      "lastName": "Demo",
+      "emailVerified": true,
+      "id": "10000000-0000-0000-0000-000000000004",
+      "email": "dave@example.test",
+      "enabled": true,
+      "firstName": "dave"
+    }
+  ],
+  "defaultSignatureAlgorithm": "RS256",
+  "clientScopes": [
+    {
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "name": "knowledge:read"
+    }
+  ],
+  "registrationAllowed": false,
+  "realm": "permission-mcp",
+  "sslRequired": "external",
+  "accessTokenLifespan": 300,
+  "enabled": true,
+  "clients": [
+    {
+      "defaultClientScopes": [
+        "knowledge:read"
+      ],
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://127.0.0.1:8765/callback"
+      ],
+      "enabled": true,
+      "name": "Local MCP PKCE demo",
+      "clientId": "permission-mcp-cli",
+      "standardFlowEnabled": true,
+      "protocolMappers": [
+        {
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "http://127.0.0.1:8080/mcp",
+            "access.token.claim": "true"
+          },
+          "protocol": "openid-connect",
+          "name": "MCP resource audience"
+        },
+        {
+          "protocolMapper": "oidc-sub-mapper",
+          "protocol": "openid-connect",
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          },
+          "name": "Stable subject"
+        }
+      ],
+      "publicClient": true
+    }
+  ]
+}

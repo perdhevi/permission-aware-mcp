@@ -76,3 +76,18 @@ storage for successful tool results. This migration adds no documents or grants.
 The optional [prompt-injection fixture](prompt-injection.sql) appends hostile text
 to Engineering Roadmap once, referencing the actual Salary Guidelines UUID. Apply
 it only to demo data, then re-ingest; see [Phase 04](../docs/phase-04.md).
+
+## Local Keycloak identities (Phase 5)
+
+Start `docker compose --profile oidc up -d`, wait for the realm import, then run:
+
+```powershell
+Get-Content -Raw seed/oidc-users.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp
+```
+
+This optional fixture adds four local identities using Keycloak's stable subjects
+and their existing database roles. It preserves dev identities, documents and
+ACLs. Reapplying it is duplicate-safe but restores its fixture role grants; do not
+use it as a production provisioning or revocation workflow. No new schema migration
+is needed. The realm has a PKCE public client and public development passwords.
+See [Phase 05](../docs/phase-05.md) for setup, audience/scope and limitations.

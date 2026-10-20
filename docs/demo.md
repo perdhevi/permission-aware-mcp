@@ -88,3 +88,20 @@ For automated, isolated tenant fixtures without modifying the demo corpus, run
 `TestAuditedInjectionIntegration` as described in [Phase 04](phase-04.md). To remove
 the optional text, restore Engineering Roadmap content from a saved copy and
 re-ingest. The fixture does not retain a backup or automatically remove content.
+
+## Keycloak login (Phase 5)
+
+The normal demo now uses Keycloak rather than locally minted tokens. Follow
+[Phase 05](phase-05.md) to start the optional Compose profile, provision OIDC users,
+export the OIDC settings in both terminals, and run `go run ./cmd/login`. Complete
+the browser login as Alice with `local-demo-only`. Use the returned access token
+with the README's MCP requests. Her subject is a UUID; roles and ACLs still come
+from PostgreSQL. For the optional hostile fixture above, run:
+
+```powershell
+./seed/prompt-injection-demo.ps1 -Token $token
+```
+
+The script accepts Alice's dev or stable Keycloak subject, checks the caller stays
+unchanged, and sends the supplied bearer token on every request. In OIDC mode it
+requires an explicit token. This remains a deterministic host simulation.
