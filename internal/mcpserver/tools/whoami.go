@@ -2,9 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
-	"log/slog"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -21,19 +18,17 @@ type WhoamiOutput struct {
 	Roles   []string `json:"roles"`
 }
 
-func RegisterWhoami(s *mcp.Server, logger *slog.Logger) {
+func RegisterWhoami(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "whoami", Description: "Return the authenticated database identity. No arguments accepted.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}},
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, WhoamiOutput, error) {
-			start := time.Now()
 			if req.Extra == nil || req.Extra.TokenInfo == nil {
-				return nil, WhoamiOutput{}, errors.New("unauthenticated")
+				return nil, WhoamiOutput{}, toolError(ctx, authn.ErrUnauthenticated)
 			}
 			p, ok := req.Extra.TokenInfo.Extra[PrincipalKey].(*authn.Principal)
 			if !ok || p == nil {
-				return nil, WhoamiOutput{}, errors.New("unauthenticated")
+				return nil, WhoamiOutput{}, toolError(ctx, authn.ErrUnauthenticated)
 			}
-			logger.InfoContext(ctx, "tool completed", "request_id", req.Extra.Header.Get("X-Request-ID"), "tool", "whoami", "user_id", p.UserID, "tenant_id", p.TenantID, "duration", time.Since(start))
 			return nil, WhoamiOutput{UserID: p.UserID, Subject: p.Subject, Tenant: p.Tenant, Scopes: append([]string{}, p.Scopes...), Roles: append([]string{}, p.Roles...)}, nil
 		})
 }

@@ -81,7 +81,18 @@ It is repeatable without duplicate chunks; chunk UUIDs change on replacement.
 Failure rolls back that document; earlier committed documents remain ingested.
 The server never performs generation or ingests client-supplied documents.
 
-Compose applies 001, 002 and 003 on a fresh volume. Existing databases must
+Phase 4 adds SDK receiving middleware outside tool schema validation. It captures
+the trusted principal, request ID and fixed decision categories, hashes search
+queries, and writes `audit_log` through `internal/audit.Store` and the PostgreSQL
+adapter. Handlers preserve internal error categories before client sanitization.
+The server constructor requires an audit store; `cmd/server` always supplies the
+PostgreSQL implementation. A nil/unavailable store withholds tool results.
+Audit insertion uses a separate bounded context so canceled reads are recorded.
+Operational access logs come from this middleware after successful persistence,
+with one decision record per tool call. Authentication and pre-dispatch transport
+failures are outside this tool audit boundary. See [Phase 04](phase-04.md).
+
+Compose applies 001, 002, 003 and 004 on a fresh volume. Existing databases must
 apply missing migrations explicitly following [seed notes](../seed/README.md). Migrations are
 transactional, ordered SQL files; there is no automatic version runner. Startup
 checks connectivity, so schema validation remains an operator prerequisite.

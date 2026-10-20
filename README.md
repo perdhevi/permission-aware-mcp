@@ -4,10 +4,12 @@ A Go MCP server demonstrating authentication and authorization for permission-aw
 retrieval. **The LLM cannot select its own user identity or role.** Caller identity
 comes exclusively from a verified bearer token; the database supplies tenant membership.
 
-Implemented through Phase 3: RS256 development authentication, PostgreSQL identity
+Implemented through Phase 4: RS256 development authentication, PostgreSQL identity
 and role lookup, tenant isolation, document ACLs, `whoami`,
 `list_accessible_sources`, `get_document`, and permission-filtered `search_knowledge`.
 An offline hash embedder and ingestion CLI provide reproducible pgvector retrieval.
+Persistent access audits and a prompt-injection demo verify that hostile retrieved
+instructions cannot grant access to confidential documents.
 The broader roadmap is preserved in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## Phase implementation guides
@@ -19,6 +21,7 @@ guide. Keep these documents updated as the corresponding implementation changes:
 - [Phase 01 — authentication and whoami](docs/phase-01.md)
 - [Phase 02 — roles and document authorization](docs/phase-02.md)
 - [Phase 03 — ingestion and permission-filtered retrieval](docs/phase-03.md)
+- [Phase 04 — audit and security demo](docs/phase-04.md)
 
 ## Requirements and setup
 
@@ -36,9 +39,9 @@ go run ./cmd/server
 The server listens at `http://127.0.0.1:8080/mcp`. Health endpoints are
 `GET /healthz` (process) and `GET /readyz` (database connectivity).
 Compose binds PostgreSQL to localhost:5432 and persists data in a named volume.
-On first initialization it applies all three SQL migrations, enables pgvector, and seeds
+On first initialization it applies all four SQL migrations, enables pgvector, and seeds
 tenant `acme`, active users `alice`, `bob`, `carol`, `dave`, roles and four documents.
-**Existing databases need any missing migrations (002, then 003) before ingestion.**
+**Existing databases need missing migrations in order (002, 003, 004).**
 Migrations do not rerun on an existing volume. See [seed notes](seed/README.md)
 for the explicit upgrade command; preserve your database volume.
 
@@ -196,7 +199,15 @@ Tools contain no SQL. Every HTTP request revalidates the token and database user
 `auth.TokenInfo.UserID` contains the local UUID; the principal is carried in SDK
 token information, never tool arguments or client metadata.
 
-See [architecture](docs/architecture.md), [security](docs/security.md) and
-[demo](docs/demo.md). Phase 4 adds persistent audit storage and the host-driven
-prompt-injection demonstration. Language-model embedding providers and production
-OAuth remain deferred.
+Every authenticated tool call, including schema-rejected spoofing, writes an
+`audit_log` record before returning results. An audit write failure returns only
+`resource service unavailable`. Records contain server-generated request IDs,
+database caller/tenant IDs, tool/action, requested document UUID, ALLOW/DENY/ERROR,
+fixed reason, SHA-256 query hash and read duration. No raw query or document text
+is stored. Audit access is operator-only; no audit MCP tool is exposed.
+
+For the optional hostile engineering-document fixture and reproducible host demo,
+see [Phase 04](docs/phase-04.md) and [demo](docs/demo.md). Existing ACLs still deny
+Alice's attempt to read Salary Guidelines, and that denial is persisted.
+See [architecture](docs/architecture.md) and [security](docs/security.md).
+Phase 5 adds real OIDC/OAuth. Language-model embedding providers remain deferred.

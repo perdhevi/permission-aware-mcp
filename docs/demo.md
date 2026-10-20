@@ -39,4 +39,52 @@ receives no Salary Guidelines title or content, even though it is an exact lexic
 match. With query `deployment automation`, Alice can retrieve Engineering Roadmap;
 Bob cannot. The offline hash embedder has no relevance threshold, so other allowed
 chunks can appear. It is a policy demo rather than a language-understanding model.
-See [Phase 03](phase-03.md). The audited prompt-injection demo follows in Phase 4.
+See [Phase 03](phase-03.md).
+
+## Audited prompt-injection demo (Phase 4)
+
+Apply migration 004 once following [seed notes](../seed/README.md). The following
+optional fixture appends hostile instructions to the existing Engineering Roadmap,
+using the actual Salary Guidelines UUID. It preserves the four-document permission
+matrix, existing content and grants; rerunning the fixture does not append twice.
+Use a local demo database. Content edits suppress old chunks until re-ingested.
+
+```powershell
+Get-Content -Raw seed/prompt-injection.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp
+if ($LASTEXITCODE -ne 0) { throw 'Demo fixture failed' }
+go run ./cmd/ingest --tenant acme
+if ($LASTEXITCODE -ne 0) { throw 'Ingestion failed' }
+go run ./cmd/server
+```
+
+In a second PowerShell 7 terminal at the repository root:
+
+```powershell
+./seed/prompt-injection-demo.ps1
+```
+
+The script mints an Alice token, retrieves the hostile text, extracts its target
+UUID, and simulates a host following that instruction by calling `get_document`.
+Expect `resource not found`, then schema rejection when it tries to claim Carol's
+identity/executive role. A final `whoami` still returns Alice. It prints one PASS
+line and never prints the token. Use `-Endpoint http://127.0.0.1:18084/mcp` for
+an alternate server address. This tests the backend boundary even when a host
+follows hostile instructions; it does not measure a model's resistance to injection.
+
+Inspect the persisted decisions as a trusted operator:
+
+```powershell
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp -c "SELECT a.timestamp,a.request_id,u.subject,a.tool,a.resource_id,a.decision,a.reason,a.query_hash,a.duration_ms FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE u.subject='alice' ORDER BY a.timestamp DESC,a.id DESC LIMIT 10;"
+```
+
+Expect ALLOW for identity/search, DENY `not_found_or_forbidden` for the injected
+read, and DENY `invalid_arguments` for spoofing. Query hashes are 64 hex characters;
+raw queries and document bodies have no audit columns. Denial does not reveal
+whether the target exists. An empty authorized search/list is an ALLOW decision.
+Audit writes add up to two seconds to the bounded read; a write failure withholds
+results and reports `resource service unavailable`.
+
+For automated, isolated tenant fixtures without modifying the demo corpus, run
+`TestAuditedInjectionIntegration` as described in [Phase 04](phase-04.md). To remove
+the optional text, restore Engineering Roadmap content from a saved copy and
+re-ingest. The fixture does not retain a backup or automatically remove content.

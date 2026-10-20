@@ -193,6 +193,25 @@ every manual variant or a standalone running-server HTTP smoke test was executed
 HTTP behavior is covered by SDK tests with a fake repository, and real SQL by
 integration tests. No external model or host-driven prompt-injection demo was run.
 
+## Phase 4 revalidation — 2026-10-20
+
+Reviewed candidate filtering, shared ACL checks, parameterized vector ranking,
+stale-content exclusion and transactional replacement. Reran the uncached full
+suite with TEST_DATABASE_URL against both the existing development database and
+a fresh database initialized with 001–004. `TestSearchIntegration` passed its
+forbidden-exact-match/top-1 fallback, role/user grant revocation, stale-content,
+rollback, model/dimension and seeded-caller checks. No retrieval-policy defect was
+found in these reviewed paths. Both SDK protocol revisions also passed.
+
+Phase 4 centralizes logging in persistent audit middleware, outside SDK schema
+validation. Search now records a SHA-256 query hash, fixed decision/reason and
+trusted caller/request identifiers. Input rejection is DENY, operational/provider
+failure is ERROR, and successful empty results are ALLOW. An audit write failure
+withholds the search output. Retrieval SQL, vector model, ingestion behavior and
+successful search output remain unchanged. The additional real database/MCP
+injection test proves a subsequent direct read cannot bypass policy, even after
+retrieving hostile authorized text. See [Phase 04](phase-04.md).
+
 ## Troubleshooting
 
 - `relation chunks does not exist`: apply migration 003 to the actual database

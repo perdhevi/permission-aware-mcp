@@ -191,6 +191,24 @@ The smoke helper and executable are ignored under `.local/`.
 The manual validation commands above are reproducible instructions;
 this record does not imply every manual variant was individually executed.
 
+## Phase 4 revalidation — 2026-10-20
+
+Reviewed the shared SQL policy and service boundary, then reran the uncached full
+suite with TEST_DATABASE_URL against the existing development database and a
+fresh database initialized with 001–004. `TestDocumentsIntegration`, identity and
+HTTP caller-switching tests passed, including explicit user/role grants, revocation,
+active status, tenant constraints, generic direct-read denial and Unicode limits.
+No authorization-policy defect was found in this review; this is evidence from
+the reviewed paths and test cases, not a proof for every possible deployment.
+
+Phase 4 replaces the original handler-local operational logs with required
+persistent audit middleware. Schema rejections now receive DENY records too;
+typed service errors retain internal categories before client sanitization.
+Resource SQL, ACL semantics, tool arguments and successful outputs are unchanged.
+The current implementation also includes Phase 3 ingestion/search; references
+above to later phases describe the original Phase 2 delivery scope. See
+[Phase 04](phase-04.md) for audit behavior, prerequisites and validation.
+
 ## Troubleshooting
 
 - Docker pipe/socket errors: start Docker Desktop and ensure the Linux engine is

@@ -55,7 +55,7 @@ func run(logger *slog.Logger) error {
 	}
 	server := &http.Server{
 		Addr:              c.HTTPAddr,
-		Handler:           mcpserver.New(verifier, authn.NewResolver(postgres.NewUsers(pool)), pool, c.RequiredScope, authz.New(postgres.NewDocuments(pool)), rag.NewRetriever(postgres.NewDocuments(pool), rag.HashEmbedder{}), logger),
+		Handler:           mcpserver.New(verifier, authn.NewResolver(postgres.NewUsers(pool)), pool, c.RequiredScope, authz.New(postgres.NewDocuments(pool)), rag.NewRetriever(postgres.NewDocuments(pool), rag.HashEmbedder{}), logger, postgres.NewAudit(pool)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

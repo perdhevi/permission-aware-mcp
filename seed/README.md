@@ -37,7 +37,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Migration 002 failed; inspect the error before
 ```
 
 Expect `COMMIT`. If `roles` already exists, do not reapply migration 002. Fresh
-volumes automatically run 001, 002, then 003. For an existing empty schema, apply 001
+volumes automatically run 001, 002, 003, then 004. For an existing empty schema, apply 001
 using the command above, then 002. Never remove a volume to upgrade it. The seed
 targets the development issuer `http://dev.local`; custom issuer users require
 explicit role assignments. Role names alone grant no access without an ACL.
@@ -60,3 +60,19 @@ The CLI reads the existing `documents.content`, chunks and embeds it, and atomic
 replaces each document's chunks without changing source IDs or grants. Rerun after
 edits. No filesystem manifest, external embedding provider or API key is needed.
 See [Phase 03](../docs/phase-03.md) for transaction boundaries and limitations.
+
+## Upgrade an existing phase 3 database
+
+Inspect `SELECT to_regclass('public.audit_log');` through psql. If null, after
+001–003 have been applied, run:
+
+```powershell
+Get-Content -Raw migrations/004_audit.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp
+if ($LASTEXITCODE -ne 0) { throw 'Migration 004 failed; inspect before retrying' }
+```
+
+Expect `COMMIT`. Do not reapply an existing migration. The server requires audit
+storage for successful tool results. This migration adds no documents or grants.
+The optional [prompt-injection fixture](prompt-injection.sql) appends hostile text
+to Engineering Roadmap once, referencing the actual Salary Guidelines UUID. Apply
+it only to demo data, then re-ingest; see [Phase 04](../docs/phase-04.md).

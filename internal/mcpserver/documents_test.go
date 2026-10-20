@@ -73,7 +73,7 @@ func (resourceDocuments) SearchReadable(_ context.Context, tenant, user, vector,
 	return []domain.SearchResult{{ChunkID: docID, DocumentID: docID, Title: "Visible", Content: "Visible content", Distance: 0.25}}, nil
 }
 func TestHTTPDocumentBoundary(t *testing.T) {
-	srv := httptest.NewServer(New(resourceVerifier{}, authn.NewResolver(resourceUsers{}), ping{}, "knowledge:read", authz.New(resourceDocuments{}), rag.NewRetriever(resourceDocuments{}, rag.HashEmbedder{}), slog.New(slog.NewTextHandler(io.Discard, nil))))
+	srv := httptest.NewServer(New(resourceVerifier{}, authn.NewResolver(resourceUsers{}), ping{}, "knowledge:read", authz.New(resourceDocuments{}), rag.NewRetriever(resourceDocuments{}, rag.HashEmbedder{}), slog.New(slog.NewTextHandler(io.Discard, nil)), &memoryAudit{}))
 	defer srv.Close()
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, subject := range []string{"alice", "bob", "alice"} {

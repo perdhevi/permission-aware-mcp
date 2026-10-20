@@ -56,7 +56,7 @@ func TestHTTPIdentityBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
-	srv := httptest.NewServer(New(verifier, authn.NewResolver(users{}), ping{}, "knowledge:read", nil, nil, slog.New(slog.NewJSONHandler(&logs, nil))))
+	srv := httptest.NewServer(New(verifier, authn.NewResolver(users{}), ping{}, "knowledge:read", nil, nil, slog.New(slog.NewJSONHandler(&logs, nil)), &memoryAudit{}))
 	defer srv.Close()
 	mint := func(subject string) string {
 		raw, err := jwt.NewWithClaims(jwt.SigningMethodRS256, authn.Claims{RegisteredClaims: jwt.RegisteredClaims{Issuer: "http://dev.local", Subject: subject, Audience: jwt.ClaimStrings{"permission-aware-mcp"}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}, Scope: "knowledge:read"}).SignedString(key)
@@ -138,7 +138,7 @@ func TestHTTPIdentityBoundary(t *testing.T) {
 	}
 }
 func TestReadinessFailure(t *testing.T) {
-	h := New(nil, nil, ping{errors.New("offline")}, "knowledge:read", nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := New(nil, nil, ping{errors.New("offline")}, "knowledge:read", nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), &memoryAudit{})
 	for _, tc := range []struct {
 		path string
 		want int
