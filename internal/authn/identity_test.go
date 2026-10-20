@@ -27,7 +27,7 @@ func TestResolve(t *testing.T) {
 		user           *domain.User
 		err, errorWant error
 	}{
-		{name: "known", user: &domain.User{ID: "alice-id", Subject: "alice", TenantID: "tenant-id", TenantSlug: "acme", Active: true}},
+		{name: "known", user: &domain.User{ID: "alice-id", Subject: "alice", TenantID: "tenant-id", TenantSlug: "acme", Active: true, Roles: []string{"engineering"}}},
 		{name: "unknown", err: repository.ErrNotFound, errorWant: ErrUnauthenticated},
 		{name: "inactive", user: &domain.User{ID: "alice-id", TenantID: "tenant-id", Active: false}, errorWant: ErrUnauthenticated},
 		{name: "database failure", err: dbErr, errorWant: dbErr},
@@ -43,6 +43,13 @@ func TestResolve(t *testing.T) {
 			}
 			if err != nil || p.UserID != "alice-id" || p.Tenant != "acme" || repo.issuer != "http://dev.local" || repo.subject != "alice" {
 				t.Fatalf("principal=%+v err=%v", p, err)
+			}
+			if len(p.Roles) != 1 || p.Roles[0] != "engineering" {
+				t.Fatalf("database roles missing: %+v", p)
+			}
+			p.Roles[0] = "changed"
+			if repo.user.Roles[0] != "engineering" {
+				t.Fatal("principal aliases repository roles")
 			}
 		})
 	}

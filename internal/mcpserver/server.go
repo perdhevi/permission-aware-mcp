@@ -13,14 +13,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"permission-aware-mcp/internal/authn"
+	"permission-aware-mcp/internal/authz"
 	"permission-aware-mcp/internal/mcpserver/tools"
 )
 
 type Pinger interface{ Ping(context.Context) error }
 
-func New(verifier authn.TokenVerifier, resolver *authn.Resolver, db Pinger, scope string, logger *slog.Logger) http.Handler {
+func New(verifier authn.TokenVerifier, resolver *authn.Resolver, db Pinger, scope string, authorization *authz.Service, logger *slog.Logger) http.Handler {
 	s := mcp.NewServer(&mcp.Implementation{Name: "permission-aware-mcp", Version: "0.1.0"}, nil)
 	tools.RegisterWhoami(s, logger)
+	tools.RegisterDocuments(s, authorization, logger)
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	verify := func(ctx context.Context, raw string, _ *http.Request) (*auth.TokenInfo, error) {
 		id, err := verifier.Verify(ctx, raw)

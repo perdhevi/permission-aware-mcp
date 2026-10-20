@@ -195,7 +195,8 @@ the authenticated MCP path; Phase 02 should implement database roles and documen
 ## Workspace relocation
 
 The project now lives at `C:\AI\permission-aware-mcp`. Run setup and test
-commands from this directory. Compose explicitly retains project name
-`permission-awaremcp` so its existing `permission-awaremcp_postgres_data` volume
-continues to be used after the directory rename. Relative documentation links
+commands from this directory. Compose currently uses project name
+`permission-aware-mcp` and volume `permission-aware-mcp_postgres_data`. A historical
+volume under another project name is separate; inspect Docker volumes before
+assuming data has been lost or reinitializing anything. Relative documentation links
 and the migrations mount resolve within the relocated project.

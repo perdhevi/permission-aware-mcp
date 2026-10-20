@@ -1,4 +1,3 @@
-// Package authz reserves the authorization boundary. Future decisions will use
-// database tenant membership, roles and document ACLs, independently of token
-// validation. No resource authorization is implemented in Phase 1.
+// Package authz authorizes resource reads using database tenant membership,
+// current roles and explicit document ACLs, independently of token validation.
 package authz

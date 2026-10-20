@@ -7,4 +7,5 @@ type User struct {
 	Subject     string
 	DisplayName string
 	Active      bool
+	Roles       []string
 }

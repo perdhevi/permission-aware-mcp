@@ -18,6 +18,7 @@ type WhoamiOutput struct {
 	Subject string   `json:"subject"`
 	Tenant  string   `json:"tenant"`
 	Scopes  []string `json:"scopes"`
+	Roles   []string `json:"roles"`
 }
 
 func RegisterWhoami(s *mcp.Server, logger *slog.Logger) {
@@ -33,6 +34,6 @@ func RegisterWhoami(s *mcp.Server, logger *slog.Logger) {
 				return nil, WhoamiOutput{}, errors.New("unauthenticated")
 			}
 			logger.InfoContext(ctx, "tool completed", "request_id", req.Extra.Header.Get("X-Request-ID"), "tool", "whoami", "user_id", p.UserID, "tenant_id", p.TenantID, "duration", time.Since(start))
-			return nil, WhoamiOutput{UserID: p.UserID, Subject: p.Subject, Tenant: p.Tenant, Scopes: append([]string{}, p.Scopes...)}, nil
+			return nil, WhoamiOutput{UserID: p.UserID, Subject: p.Subject, Tenant: p.Tenant, Scopes: append([]string{}, p.Scopes...), Roles: append([]string{}, p.Roles...)}, nil
 		})
 }

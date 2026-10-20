@@ -21,6 +21,7 @@ type Principal struct {
 	TenantID string
 	Tenant   string
 	Scopes   []string
+	Roles    []string
 }
 
 var ErrUnauthenticated = errors.New("unauthenticated")
@@ -42,5 +43,5 @@ func (r *Resolver) Resolve(ctx context.Context, id *Identity) (*Principal, error
 	if u == nil || !u.Active || u.ID == "" || u.TenantID == "" {
 		return nil, ErrUnauthenticated
 	}
-	return &Principal{UserID: u.ID, Subject: u.Subject, TenantID: u.TenantID, Tenant: u.TenantSlug, Scopes: append([]string{}, id.Scopes...)}, nil
+	return &Principal{UserID: u.ID, Subject: u.Subject, TenantID: u.TenantID, Tenant: u.TenantSlug, Scopes: append([]string{}, id.Scopes...), Roles: append([]string{}, u.Roles...)}, nil
 }

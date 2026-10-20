@@ -17,10 +17,10 @@ Identity Resolver
 User Repository (issuer + subject lookup)
    |
    v
-Principal (database user ID, tenant, token scopes)
+Principal (database user ID, tenant, roles, token scopes)
    |
    v
-MCP Tool (whoami)
+MCP Tools (whoami, list_accessible_sources, get_document)
 ```
 
 `internal/authn` validates tokens and resolves an active local identity. The
@@ -41,7 +41,7 @@ Token expiry, deactivation and tenant membership are therefore checked again on
 subsequent requests. Per-request logs correlate HTTP and tool calls via generated
 request IDs. No headers, tokens or request bodies are logged.
 
-Future components (not implemented):
+Document read path (implemented in Phase 2):
 
 ```text
 MCP Tool
@@ -50,19 +50,30 @@ MCP Tool
 Authorization (tenant + database roles + document ACL)
    |
    v
-Permission-aware RAG (authorized candidates before ranking)
+Document Repository (same tenant + active user + explicit user/role read grant)
    |
    v
 PostgreSQL + pgvector
 ```
 
-`internal/authz` is only a documented package boundary. `internal/rag.Embedder`
-defines the future embedding contract without selecting or implementing a provider.
-No ingestion, semantic retrieval or resource authorization is exposed yet.
+`internal/authz.Service` validates the principal and resource arguments and invokes
+permission-constrained reads. The repository rechecks active user membership and
+current role/ACL records in the same SQL statement that returns data. There is no
+separate permission-check/read race and no policy cache. Principal roles are for
+`whoami`; read decisions use the current database state. `EXISTS` avoids duplicate
+sources when several grants match. The outer tenant predicate applies to both
+listing and direct reads, before ordering and limiting.
 
-The Compose database initializes the initial migration on a fresh volume. A future
-schema-change phase should introduce versioned migration execution before adding
-further migrations; this milestone does not silently migrate existing volumes.
+Composite foreign keys prevent cross-tenant role assignments and ACL grants.
+ACLs use exactly one nullable `user_id` or `role_id` with real foreign keys rather
+than an unchecked polymorphic UUID. No role has implicit privileges.
+`internal/rag.Embedder` remains a future contract; ingestion and semantic retrieval
+are deferred to Phase 3.
+
+Compose applies 001 and 002 on a fresh volume. Existing phase 1 databases must
+apply 002 explicitly following [seed notes](../seed/README.md). Migrations are
+transactional, ordered SQL files; there is no automatic version runner. Startup
+checks connectivity, so schema validation remains an operator prerequisite.
 
 SDK references: [releases](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0)
 and [protocol guide](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/docs/protocol.md).

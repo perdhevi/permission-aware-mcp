@@ -1,13 +1,13 @@
 # permission-aware-mcp
 
-A Go MCP server demonstrating the authentication foundation for permission-aware
+A Go MCP server demonstrating authentication and authorization for permission-aware
 retrieval. **The LLM cannot select its own user identity or role.** Caller identity
 comes exclusively from a verified bearer token; the database supplies tenant membership.
 
-This pass implements Phase 0–1: project skeleton, RS256 development authentication,
-PostgreSQL identity lookup and `whoami`. It deliberately stops before roles, ACLs or RAG.
-The broader roadmap is preserved in [PROJECT_SPEC.md](PROJECT_SPEC.md); the limited
-scope above governs this implementation.
+Implemented through Phase 2: RS256 development authentication, PostgreSQL identity
+and role lookup, tenant isolation, document ACLs, `whoami`,
+`list_accessible_sources`, and `get_document`. Semantic retrieval follows in Phase 3.
+The broader roadmap is preserved in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## Phase implementation guides
 
@@ -16,6 +16,7 @@ guide. Keep these documents updated as the corresponding implementation changes:
 
 - [Phase 00 — project skeleton and database](docs/phase-00.md)
 - [Phase 01 — authentication and whoami](docs/phase-01.md)
+- [Phase 02 — roles and document authorization](docs/phase-02.md)
 
 ## Requirements and setup
 
@@ -32,9 +33,11 @@ go run ./cmd/server
 The server listens at `http://127.0.0.1:8080/mcp`. Health endpoints are
 `GET /healthz` (process) and `GET /readyz` (database connectivity).
 Compose binds PostgreSQL to localhost:5432 and persists data in a named volume.
-On first initialization it applies `migrations/001_initial.sql`, enables pgvector,
-and seeds tenant `acme` and active users `alice`, `bob`, `carol`, `dave`.
-Migrations do not rerun on an existing database volume. See [seed notes](seed/README.md).
+On first initialization it applies both SQL migrations, enables pgvector, and seeds
+tenant `acme`, active users `alice`, `bob`, `carol`, `dave`, roles and four documents.
+**Existing phase 1 databases need migration 002 before starting the updated server.**
+Migrations do not rerun on an existing volume. See [seed notes](seed/README.md)
+for the explicit upgrade command; preserve your database volume.
 
 Configuration uses environment variables; `.env.example` lists the development
 defaults. The Go commands do **not** automatically load `.env` files. Export values
@@ -89,7 +92,7 @@ $reply.result.structuredContent
 ```
 
 Expect the seeded user's UUID, subject `alice`, tenant `acme`, and scope
-`knowledge:read`. No token or signing data is returned. Omitting the bearer token
+`knowledge:read`, and database role `engineering`. No token or signing data is returned. Omitting the bearer token
 or using an invalid token returns HTTP 401. Unknown and inactive users also receive
 401. JWTs without the configured scope fail authentication with 401; this verifier
 checks scope before the SDK middleware's additional scope check.
@@ -101,9 +104,9 @@ go vet ./...
 go test ./...
 ```
 
-Tests exercise RS256 signature and claim validation, user resolution, inactive-user
-rejection, HTTP authentication failures, strict tool arguments, and alternating
-Alice/Bob callers through the official SDK client using both protocol revisions.
+Tests exercise authentication, database roles, strict tool arguments, caller
+isolation through both SDK protocol revisions, authorized listing/direct reads,
+revocation, cross-tenant constraints, and Unicode content limits.
 Database tests skip unless `TEST_DATABASE_URL` is set. Run them against the local
 Compose database with PowerShell:
 
@@ -112,18 +115,56 @@ $env:TEST_DATABASE_URL = 'postgres://permission_mcp:permission_mcp@localhost:543
 go test -count=1 ./...
 ```
 
-Integration tests check real seeded users and pgvector, and create then remove
-a dedicated inactive test identity without changing seeded users.
+Integration tests check real seeded users, pgvector and the permission matrix,
+and remove their dedicated fixtures without changing seeded users.
+
+## Read authorized documents
+
+Use the same `$body` and `$headers` from the PowerShell example above:
+
+```powershell
+$headers['Mcp-Name'] = 'list_accessible_sources'
+$request = $body | ConvertFrom-Json -AsHashtable
+$request.params.name = 'list_accessible_sources'
+$request.params.arguments = @{ limit = 20 }
+$body = $request | ConvertTo-Json -Depth 8
+$sources = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Headers $headers -ContentType application/json -Body $body
+$sources.result.structuredContent.sources
+
+$documentID = $sources.result.structuredContent.sources[0].document_id
+$headers['Mcp-Name'] = 'get_document'
+$request.params.name = 'get_document'
+$request.params.arguments = @{ document_id = $documentID; max_chars = 12000 }
+$body = $request | ConvertTo-Json -Depth 8
+$document = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Headers $headers -ContentType application/json -Body $body
+$document.result.structuredContent
+```
+
+This example requires PowerShell 7. Listing defaults to 20, accepts 1–100, and
+returns only document UUIDs and titles in title/UUID order. Direct reads accept
+a UUID and default to 12000 Unicode characters (1–50000), returning a `truncated`
+flag. Missing and forbidden documents both produce the MCP tool error
+`resource not found`. Every call rechecks current database permissions.
+
+| Caller | Role | Accessible documents |
+| --- | --- | --- |
+| Alice | engineering | Company Handbook, Engineering Roadmap |
+| Bob | hr | Company Handbook, Salary Guidelines |
+| Carol | executive | All four |
+| Dave | employee | Company Handbook |
+
+Roles have no implicit hierarchy or global bypass. The seed explicitly grants
+Company Handbook to all four roles and each confidential document to its readers.
 
 ## Architecture and next phase
 
-JWT validation → identity → repository lookup → principal → MCP tool.
+JWT validation → identity → database principal → MCP tool → authorization service
+→ tenant/ACL-filtered repository query.
 Tools contain no SQL. Every HTTP request revalidates the token and database user.
 `auth.TokenInfo.UserID` contains the local UUID; the principal is carried in SDK
 token information, never tool arguments or client metadata.
 
 See [architecture](docs/architecture.md), [security](docs/security.md) and
-[demo](docs/demo.md). The next phase is database roles, document ACLs and independently
-authorized `list_accessible_sources` / `get_document`. Permission-filtered semantic
-retrieval follows that phase. No embedding provider, document data or fake policy
-implementation is included here.
+[demo](docs/demo.md). Phase 3 adds permission-filtered semantic retrieval and
+ingestion. Embeddings, search, persistent audit storage and production OAuth
+remain deferred.

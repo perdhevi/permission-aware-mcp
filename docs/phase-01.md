@@ -273,6 +273,8 @@ discovery, login, key rotation, token revocation, RBAC, document ACLs or RAG.
 Deleting a signing key does not revoke tokens already signed with it; changing
 the server's public key requires restart. Keep the development service local.
 
-Phase 02 should add database roles, document records and ACLs, an independent
+Phase 02 adds database roles, document records and ACLs, an independent
 authorization service, and authorized `list_accessible_sources` / `get_document`
-tools. Semantic retrieval should follow only after those access rules are testable.
+tools; see [Phase 02](phase-02.md). Current `whoami` also returns database roles
+and current startup requires migration 002. The validation record above describes
+the original phase 1 implementation. Semantic retrieval follows in Phase 3.

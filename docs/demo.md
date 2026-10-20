@@ -1,4 +1,4 @@
-# Phase 1 demo
+# Authentication and authorization demo
 
 Follow the exact setup and PowerShell call in [README](../README.md).
 
@@ -17,6 +17,18 @@ Follow the exact setup and PowerShell call in [README](../README.md).
 Use `go run ./cmd/devtoken mint --subject alice --ttl 1s`, wait until it expires,
 and call again: expect 401. Never put real bearer tokens in demo documents or logs.
 
-Automated tests cover these boundaries and both current and legacy protocol clients.
-The command in README enables real database integration tests. No document retrieval,
-role assignments or prompt-injection retrieval demo exists until later phases.
+Continue with the authorized read examples in [README](../README.md) and the
+complete [Phase 02 guide](phase-02.md). Repeat listing with each caller's token:
+Alice sees Company Handbook and Engineering Roadmap; Bob sees Company Handbook
+and Salary Guidelines; Carol sees all four; Dave sees Company Handbook.
+
+As Carol, save the UUID of Salary Guidelines, then switch to Alice's token and
+call `get_document` with that UUID. Expect `isError: true` and `resource not found`.
+Bob receives the same error for Engineering Roadmap. Knowing a UUID or having
+previously listed a source does not grant access. Extra identity/role/tenant
+arguments are rejected on both tools.
+
+Automated tests cover these boundaries and both current and legacy protocol
+clients. Enable `TEST_DATABASE_URL` to run the real database permission matrix,
+revocation and cross-tenant tests. Semantic search and the complete prompt-injection
+retrieval demo follow in later phases.
