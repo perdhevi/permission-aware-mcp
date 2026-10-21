@@ -4,6 +4,7 @@ package audit
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"permission-aware-mcp/internal/authn"
@@ -16,13 +17,18 @@ type Event struct {
 	RequestID, UserID, TenantID, Tool, Action, ResourceID string
 	Decision, Reason, QueryHash                           string
 	DurationMS                                            int64
+	// DisclosedDocumentIDs is nil when not applicable and empty when nothing was returned.
+	DisclosedDocumentIDs []string
 }
 
 type Store interface {
 	Append(context.Context, Event) error
 }
 
-type outcome struct{ decision, reason string }
+type outcome struct {
+	decision, reason string
+	disclosed        []string
+}
 type outcomeKey struct{}
 
 // Track creates request-local state; no caller-controlled metadata is trusted.
@@ -45,6 +51,28 @@ func RecordError(ctx context.Context, err error) {
 	case errors.Is(err, authz.ErrInvalidInput):
 		o.decision, o.reason = "DENY", "invalid_arguments"
 	}
+}
+
+// RecordDisclosed stores the distinct document IDs a successful result returns.
+func RecordDisclosed(ctx context.Context, documentIDs []string) {
+	o, _ := ctx.Value(outcomeKey{}).(*outcome)
+	if o == nil {
+		return
+	}
+	o.disclosed = []string{}
+	for _, id := range documentIDs {
+		if !slices.Contains(o.disclosed, id) {
+			o.disclosed = append(o.disclosed, id)
+		}
+	}
+}
+
+// Disclosed returns nil unless a handler recorded its returned documents.
+func Disclosed(ctx context.Context) []string {
+	if o, _ := ctx.Value(outcomeKey{}).(*outcome); o != nil && o.disclosed != nil {
+		return slices.Clone(o.disclosed)
+	}
+	return nil
 }
 
 func Decision(ctx context.Context, failed bool) (string, string) {

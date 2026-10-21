@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"permission-aware-mcp/internal/audit"
 	"permission-aware-mcp/internal/domain"
 	"permission-aware-mcp/internal/rag"
 )
@@ -36,6 +37,11 @@ func RegisterSearch(s *mcp.Server, retriever *rag.Retriever) {
 			if results == nil {
 				results = []domain.SearchResult{}
 			}
+			ids := make([]string, len(results))
+			for i, hit := range results {
+				ids[i] = hit.DocumentID
+			}
+			audit.RecordDisclosed(ctx, ids)
 			return nil, SearchOutput{results}, nil
 		})
 }

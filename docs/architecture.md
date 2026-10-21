@@ -103,11 +103,13 @@ adapter. Handlers preserve internal error categories before client sanitization.
 The server constructor requires an audit store; `cmd/server` always supplies the
 PostgreSQL implementation. A nil/unavailable store withholds tool results.
 Audit insertion uses a separate bounded context so canceled reads are recorded.
+Successful resource handlers record the distinct document UUIDs they return
+(migration 005); the middleware persists them only with ALLOW decisions.
 Operational access logs come from this middleware after successful persistence,
 with one decision record per tool call. Authentication and pre-dispatch transport
 failures are outside this tool audit boundary. See [Phase 04](phase-04.md).
 
-Compose applies 001, 002, 003 and 004 on a fresh volume. Existing databases must
+Compose applies 001 through 005 in order on a fresh volume. Existing databases must
 apply missing migrations explicitly following [seed notes](../seed/README.md). Migrations are
 transactional, ordered SQL files; there is no automatic version runner. Startup
 checks connectivity, so schema validation remains an operator prerequisite.

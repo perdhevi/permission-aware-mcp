@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -107,6 +108,14 @@ func TestAuditHTTPBoundary(t *testing.T) {
 				}
 				if tc.args["document_id"] == "invalid" && e.ResourceID != "" {
 					t.Fatal("stored malformed identifier")
+				}
+				// Only successful resource reads record disclosures; the fakes return docID.
+				if tc.decision == "ALLOW" && tc.name != "whoami" {
+					if !slices.Equal(e.DisclosedDocumentIDs, []string{docID}) {
+						t.Fatalf("%s disclosures: %+v", tc.name, e.DisclosedDocumentIDs)
+					}
+				} else if e.DisclosedDocumentIDs != nil {
+					t.Fatalf("%s recorded disclosures: %+v", tc.name, e.DisclosedDocumentIDs)
 				}
 			}
 			store.mu.Lock()
@@ -244,6 +253,22 @@ func TestAuditedInjectionIntegration(t *testing.T) {
 	err = pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE decision='ALLOW'),count(*) FILTER(WHERE reason='not_found_or_forbidden'),count(*) FILTER(WHERE reason='invalid_arguments'),count(*) FILTER(WHERE query_hash IS NOT NULL),count(*) FILTER(WHERE resource_id=$3::uuid AND decision='DENY') FROM audit_log WHERE tenant_id=$1 AND user_id=$2`, tenants[0], user, foreign).Scan(&total, &allows, &denials, &spoofs, &hashes, &foreignDenials)
 	if err != nil || total != 14 || allows != 8 || denials != 4 || spoofs != 2 || hashes != 2 || foreignDenials != 2 {
 		t.Fatalf("audit matrix: %d/%d/%d/%d/%d/%d %v", total, allows, denials, spoofs, hashes, foreignDenials, err)
+	}
+	// The audit trail itself proves which documents reached the caller.
+	var listed, searched, read, nulls, leaked int
+	err = pool.QueryRow(ctx, `SELECT
+ count(*) FILTER(WHERE tool='list_accessible_sources' AND disclosed_document_ids=ARRAY[$3::uuid]),
+ count(*) FILTER(WHERE tool='search_knowledge' AND disclosed_document_ids=ARRAY[$3::uuid]),
+ count(*) FILTER(WHERE tool='get_document' AND disclosed_document_ids=ARRAY[$3::uuid]),
+ count(*) FILTER(WHERE disclosed_document_ids IS NULL),
+ count(*) FILTER(WHERE $4::uuid=ANY(disclosed_document_ids) OR $5::uuid=ANY(disclosed_document_ids))
+ FROM audit_log WHERE tenant_id=$1 AND user_id=$2`, tenants[0], user, allowed, secret, foreign).Scan(&listed, &searched, &read, &nulls, &leaked)
+	if err != nil || listed != 2 || searched != 2 || read != 2 || nulls != 8 || leaked != 0 {
+		t.Fatalf("disclosure matrix: %d/%d/%d/%d/%d %v", listed, searched, read, nulls, leaked, err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO audit_log(timestamp,request_id,user_id,tenant_id,tool,action,decision,reason,duration_ms,disclosed_document_ids)
+ VALUES(now(),repeat('0',32),$1,$2,'get_document','read','DENY','not_found_or_forbidden',0,ARRAY[$3::uuid])`, user, tenants[0], secret); err == nil {
+		t.Fatal("schema accepted disclosures on a denied decision")
 	}
 	var distinctRequests int
 	if err := pool.QueryRow(ctx, `SELECT count(DISTINCT request_id) FROM audit_log WHERE tenant_id=$1`, tenants[0]).Scan(&distinctRequests); err != nil || distinctRequests != total {

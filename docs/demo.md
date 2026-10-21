@@ -43,7 +43,7 @@ See [Phase 03](phase-03.md).
 
 ## Audited prompt-injection demo (Phase 4)
 
-Apply migration 004 once following [seed notes](../seed/README.md). The following
+Apply migrations 004 and 005 once following [seed notes](../seed/README.md). The following
 optional fixture appends hostile instructions to the existing Engineering Roadmap,
 using the actual Salary Guidelines UUID. It preserves the four-document permission
 matrix, existing content and grants; rerunning the fixture does not append twice.
@@ -74,12 +74,14 @@ follows hostile instructions; it does not measure a model's resistance to inject
 Inspect the persisted decisions as a trusted operator:
 
 ```powershell
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp -c "SELECT a.timestamp,a.request_id,u.subject,a.tool,a.resource_id,a.decision,a.reason,a.query_hash,a.duration_ms FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE u.subject='alice' ORDER BY a.timestamp DESC,a.id DESC LIMIT 10;"
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp -c "SELECT a.timestamp,a.request_id,u.subject,a.tool,a.resource_id,a.decision,a.reason,a.query_hash,a.disclosed_document_ids,a.duration_ms FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE u.subject='alice' ORDER BY a.timestamp DESC,a.id DESC LIMIT 10;"
 ```
 
 Expect ALLOW for identity/search, DENY `not_found_or_forbidden` for the injected
 read, and DENY `invalid_arguments` for spoofing. Query hashes are 64 hex characters;
-raw queries and document bodies have no audit columns. Denial does not reveal
+raw queries and document bodies have no audit columns. The search row's
+`disclosed_document_ids` lists Engineering Roadmap (and any other returned sources)
+but never Salary Guidelines; denied and spoofed rows show NULL. Denial does not reveal
 whether the target exists. An empty authorized search/list is an ALLOW decision.
 Audit writes add up to two seconds to the bounded read; a write failure withholds
 results and reports `resource service unavailable`.
@@ -91,7 +93,8 @@ re-ingest. The fixture does not retain a backup or automatically remove content.
 
 ## Keycloak login (Phase 5)
 
-The normal demo now uses Keycloak rather than locally minted tokens. Follow
+This optional mode uses Keycloak rather than locally minted tokens; the default
+demo above stays offline in `AUTH_MODE=dev`. Follow
 [Phase 05](phase-05.md) to start the optional Compose profile, provision OIDC users,
 export the OIDC settings in both terminals, and run `go run ./cmd/login`. Complete
 the browser login as Alice with `local-demo-only`. Use the returned access token

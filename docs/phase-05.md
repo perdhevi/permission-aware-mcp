@@ -3,7 +3,10 @@
 ## Scope and outcome
 
 Add a real external authorization server and browser authorization-code/PKCE flow
-for the normal local demo. Keep `AUTH_MODE=dev` as an optional offline mode. Both
+as an optional local demo mode. `AUTH_MODE=dev` remains the default, offline demo
+(README leads with it since 2026-10-21 so the retrieval demo needs no identity
+provider; no code changed). This departs from the original roadmap's goal of
+making OIDC the normal demonstration path. Both
 implement the same verifier interface and resolve `(issuer, subject)` against the
 database on every request. All existing tenant, ACL, retrieval and audit boundaries
 remain in force. This is a resource server, not an authorization server or token proxy.
@@ -71,7 +74,8 @@ is five minutes. Local deactivation and ACL changes still apply on every request
 
 Go 1.27.1+, PowerShell 7, Docker Compose v2 and a running Linux engine; free local
 ports 5432, 8080, 8081 and 8765. Existing databases need migrations 001–004 (see
-[seed notes](../seed/README.md)). No migration 005 is required. Downloading the new
+[seed notes](../seed/README.md)); Phase 5 itself adds no migration. The later Phase 4
+revision adds migration 005, which current code also requires. Downloading the new
 Go dependency and Keycloak image requires network access. Tests need localhost
 sockets. Commands do not automatically load `.env`. Use a local development DB.
 

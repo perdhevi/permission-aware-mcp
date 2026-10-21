@@ -37,6 +37,9 @@ func auditMiddleware(store audit.Store, logger *slog.Logger) mcp.Middleware {
 			case "whoami":
 				e.Action = "identity"
 			case "get_document", "list_accessible_sources", "search_knowledge":
+				if e.Decision == "ALLOW" {
+					e.DisclosedDocumentIDs = audit.Disclosed(ctx)
+				}
 			default:
 				e.Tool, e.Action, e.Decision, e.Reason = "unknown", "unknown", "DENY", "unknown_tool"
 			}

@@ -43,8 +43,10 @@ Every authenticated `tools/call` is persistently audited, including SDK schema
 rejections, unknown tool names and denied direct reads. Fixed reason categories
 avoid storing raw error text. Unknown names are recorded as `unknown`. Query text
 is stored only as an unsalted SHA-256 hash; common queries remain guessable, so
-audit records are sensitive operator data. No token, arguments, content, title,
-embedding or ACL metadata is stored. Denied and missing resources share the reason
+audit records are sensitive operator data. Successful list, search and direct
+reads also store the distinct document UUIDs returned, which reveals who received
+what; a schema constraint forbids disclosures on DENY/ERROR rows. No token, arguments,
+content, title, embedding or ACL metadata is stored. Denied and missing resources share the reason
 `not_found_or_forbidden`; no unrestricted existence probe is made.
 
 Audit writes have a separate two-second timeout and survive request cancellation.

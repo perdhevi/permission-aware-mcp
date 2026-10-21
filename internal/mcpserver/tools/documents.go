@@ -61,6 +61,11 @@ func RegisterDocuments(s *mcp.Server, service *authz.Service) {
 			if sources == nil {
 				sources = []domain.Source{}
 			}
+			ids := make([]string, len(sources))
+			for i, s := range sources {
+				ids[i] = s.DocumentID
+			}
+			audit.RecordDisclosed(ctx, ids)
 			return nil, SourcesOutput{Sources: sources}, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get_document", Description: "Read a document with a fresh permission check. max_chars defaults to 12000 (1–50000 Unicode characters).",
@@ -78,6 +83,7 @@ func RegisterDocuments(s *mcp.Server, service *authz.Service) {
 			if err != nil {
 				return nil, nil, toolError(ctx, err)
 			}
+			audit.RecordDisclosed(ctx, []string{doc.DocumentID})
 			return nil, doc, nil
 		})
 }

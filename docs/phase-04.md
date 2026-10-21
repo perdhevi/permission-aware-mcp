@@ -12,6 +12,7 @@ without changing the original four-document matrix or adding end-user writes.
 
 | Files | Changes |
 | --- | --- |
+| `migrations/005_audit_disclosures.sql` (revision 2026-10-21) | Nullable `disclosed_document_ids UUID[]`, ALLOW/resource-tool-only and ≤100-entry constraint, GIN index. |
 | `migrations/004_audit.sql` | Transactional audit table, bounded categorical fields, UUID identifiers, hash constraints, tenant/time and request indexes. |
 | `internal/audit/service.go` | Event/store contract and request-local decision classification from typed internal errors. |
 | `internal/repository/postgres/audit.go` | Parameterized persistent insert; absent resource/hash values become SQL NULL. |
@@ -141,7 +142,13 @@ a 64-character query hash. The four-source permission matrix remains unchanged.
   same-tenant confidential and foreign-tenant reads are denied; spoofing is rejected;
   subsequent authorized access still works. Both revisions produce the expected
   14 total events, 8 ALLOW, 4 generic document denials, 2 spoofing denials, 2 query
-  hashes and 14 distinct request IDs. Fixtures and their events are removed.
+  hashes and 14 distinct request IDs. Disclosure columns show exactly the allowed
+  document for each list/search/read ALLOW, NULL on the other 8 rows, and never the
+  confidential or foreign document. The schema rejects disclosures on a DENY row.
+  Fixtures and their events are removed.
+- `TestAuditHTTPBoundary` also requires disclosures on every ALLOW resource call
+  and nil disclosures for whoami, DENY and ERROR. `TestDisclosed` covers distinct
+  ordering, empty-versus-not-applicable and copy semantics.
 - Existing Phase 1–3 authentication, identity switching, tenant constraints,
   explicit grants, revocations, stale content, ingestion rollback, top-1 ranking
   and Unicode suites continue to run.
@@ -176,10 +183,62 @@ The commands above are reproducible instructions. Only explicitly recorded actio
 were executed; no external LLM demonstration, load test or production deployment
 was performed.
 
+## Revision 2026-10-21 — disclosed documents
+
+### Scope and changes
+
+Audit rows previously recorded the requested UUID of a direct read but not what a
+successful list or search returned, so "which callers received document X?" was
+unanswerable. Migration 005 adds `disclosed_document_ids`. `list_accessible_sources`,
+`search_knowledge` and `get_document` call `audit.RecordDisclosed` with the distinct
+document UUIDs of their result, in result order; the middleware stores them only
+when the decision is ALLOW. NULL means not applicable (whoami, DENY, ERROR); an
+empty array means an authorized call returned nothing. Files: `internal/audit/service.go`,
+`internal/mcpserver/audit.go`, `internal/mcpserver/tools/{documents,search}.go`,
+`internal/repository/postgres/audit.go`, tests and the documents listed above.
+
+### Design decisions
+
+Document UUIDs, not chunk UUIDs, are stored: chunk IDs change on every re-ingest,
+while document IDs are stable and match the ACL unit. Handlers report IDs through
+the same request-local state as error categories, rather than the middleware
+parsing result JSON. The column is document-level metadata only: no titles, content
+or ACL details. It makes audit rows more sensitive (who saw what), consistent with
+existing operator-only access. A failed audit write still withholds results.
+Example operator query:
+
+```sql
+SELECT a.timestamp, u.subject, a.tool FROM audit_log a JOIN users u ON u.id = a.user_id
+WHERE '<document-uuid>'::uuid = ANY(a.disclosed_document_ids) ORDER BY a.timestamp DESC;
+```
+
+### Upgrade and validation commands
+
+Apply migration 005 once to existing databases following
+[seed notes](../seed/README.md#upgrade-an-existing-phase-4-database); fresh volumes
+apply it automatically. Then rerun section 2 above with `TEST_DATABASE_URL` set
+and expect `TestDisclosed`, `TestAuditHTTPBoundary` and `TestAuditedInjectionIntegration`
+to pass.
+
+### Validation record — 2026-10-21
+
+Created temporary database `review_validation_20261021b`, applied 001–004, inserted
+one pre-existing audit row, then applied 005: COMMIT, the legacy row kept NULL
+disclosures. Applied the OIDC user fixture and ran `go test -count=1 -v ./...` with
+`TEST_DATABASE_URL` and `TEST_OIDC_ISSUER` against running Keycloak 26.8.1. All
+packages passed, including the extended `TestAuditedInjectionIntegration`,
+`TestAuditHTTPBoundary`, `TestDisclosed`, `TestKeycloakIntegration` and SQL suites,
+except `TestLoginPKCECallback`, which could not bind 127.0.0.1:8765 because an
+unrelated local container published that port (environmental; not affected by
+this change). `gofmt -l cmd internal` and `go vet ./...` were clean. The temporary
+database was dropped. The development database was **not** migrated; apply 005
+there before running the server. No manual server/demo run was performed for
+this revision.
+
 ## Troubleshooting
 
 - `resource service unavailable` for every otherwise valid tool: inspect server
-  logs for `audit storage unavailable`, verify migration 004 and INSERT privileges,
+  logs for `audit storage unavailable`, verify migrations 004 and 005 and INSERT privileges,
   pool availability and database connectivity. No content is returned without a
   successful audit write. Readiness checks connectivity, not schema or audit writes.
 - Missing audit for 401 or malformed JSON: these fail before authenticated tool
@@ -204,7 +263,8 @@ executed as a full PowerShell/Keycloak demo. The earlier Phase 4 validation reco
 above remains historical. See [Phase 05](phase-05.md) for actual OIDC test results.
 
 Development authentication, a small exact-search corpus, and trusted DB operators
-remain the scope. No production OAuth, administrative audit MCP tool, audit export,
+remain the scope. Disclosures are document-level: they do not record which chunks
+or how many characters were returned. No production OAuth, administrative audit MCP tool, audit export,
 retention/deletion policy, immutable storage, separate audit credentials, retries,
 crash recovery queue, authenticated HTTP-failure audit, LLM generation or live-model
 injection evaluation. Rate limiting and audit-volume controls remain future work.
