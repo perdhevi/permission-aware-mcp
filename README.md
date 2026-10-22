@@ -11,7 +11,6 @@ and role lookup, tenant isolation, document ACLs, `whoami`,
 An offline hash embedder and ingestion CLI provide reproducible pgvector retrieval.
 Persistent access audits and a prompt-injection demo verify that hostile retrieved
 instructions cannot grant access to confidential documents.
-The broader roadmap is preserved in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## Phase implementation guides
 
