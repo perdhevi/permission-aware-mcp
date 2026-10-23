@@ -13,6 +13,7 @@ without changing the original four-document matrix or adding end-user writes.
 | Files | Changes |
 | --- | --- |
 | `migrations/005_audit_disclosures.sql` (revision 2026-10-21) | Nullable `disclosed_document_ids UUID[]`, ALLOW/resource-tool-only and ≤100-entry constraint, GIN index. |
+| `seed/audit-disclosure-demo.ps1` (revision 2026-10-21) | End-to-end replication: four seeded callers, every tool, row-by-row audit comparison, operator query and DENY constraint check. |
 | `migrations/004_audit.sql` | Transactional audit table, bounded categorical fields, UUID identifiers, hash constraints, tenant/time and request indexes. |
 | `internal/audit/service.go` | Event/store contract and request-local decision classification from typed internal errors. |
 | `internal/repository/postgres/audit.go` | Parameterized persistent insert; absent resource/hash values become SQL NULL. |
@@ -212,13 +213,95 @@ SELECT a.timestamp, u.subject, a.tool FROM audit_log a JOIN users u ON u.id = a.
 WHERE '<document-uuid>'::uuid = ANY(a.disclosed_document_ids) ORDER BY a.timestamp DESC;
 ```
 
-### Upgrade and validation commands
+### Test and replication steps
 
-Apply migration 005 once to existing databases following
-[seed notes](../seed/README.md#upgrade-an-existing-phase-4-database); fresh volumes
-apply it automatically. Then rerun section 2 above with `TEST_DATABASE_URL` set
-and expect `TestDisclosed`, `TestAuditHTTPBoundary` and `TestAuditedInjectionIntegration`
-to pass.
+Run from the repository root in PowerShell 7 (Windows PowerShell 5.1 also works)
+with Docker running. Use a local
+development database only; the replication script adds 32 audit rows.
+
+**1. Unit tests (no database).**
+
+```powershell
+gofmt -l cmd internal
+go vet ./...
+go test -count=1 -v -run 'TestDisclosed|TestAuditHTTPBoundary|TestAuditSurvivesCancellation' ./internal/audit ./internal/mcpserver
+```
+
+Expect no gofmt output and PASS for all three tests. `TestDisclosed` checks nil
+(not applicable) versus empty (nothing returned), distinct IDs in result order,
+and copy semantics. `TestAuditHTTPBoundary` checks both MCP revisions: every ALLOW
+from list/search/read records exactly the returned document, while whoami, DENY
+and ERROR record nil.
+
+**2. Database and migration 005.** Start Compose and check the column:
+
+```powershell
+docker compose up -d --wait
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp -c "SELECT count(*) FROM information_schema.columns WHERE table_name='audit_log' AND column_name='disclosed_document_ids';"
+```
+
+Expect `1` on a fresh volume. If `0`, apply 005 once following
+[seed notes](../seed/README.md#upgrade-an-existing-phase-4-database) and expect
+`COMMIT`; rerun the check. Never reapply it once the count is 1.
+
+**3. Integration tests (real PostgreSQL).**
+
+```powershell
+$env:TEST_DATABASE_URL = 'postgres://permission_mcp:permission_mcp@localhost:5432/permission_mcp?sslmode=disable'
+go test -count=1 -v -run 'TestAuditedInjectionIntegration|TestDocumentsIntegration|TestSearchIntegration' ./...
+```
+
+Expect PASS, not SKIP. `TestAuditedInjectionIntegration` asserts, for both
+revisions, 2 list/2 search/2 read rows disclosing exactly the allowed document,
+8 NULL rows, zero rows disclosing the confidential or foreign-tenant document,
+and that the schema rejects an INSERT with disclosures on a DENY row. Then run
+the whole suite (`go test -count=1 ./...`); see the `TestLoginPKCECallback`
+note in Troubleshooting if port 8765 is taken.
+
+**4. End-to-end replication against the seeded matrix.** In terminal 1:
+
+```powershell
+$env:AUTH_MODE = 'dev'
+go run ./cmd/ingest --tenant acme
+go run ./cmd/devtoken keygen   # only once; it refuses to overwrite existing keys
+go run ./cmd/server
+```
+
+In terminal 2 (also `AUTH_MODE=dev` or unset), with no other MCP clients running:
+
+```powershell
+./seed/audit-disclosure-demo.ps1
+```
+
+The script mints development tokens for Carol, Alice, Bob and Dave. For each it
+calls `whoami`, `list_accessible_sources`, `search_knowledge` (`salary`, limit 20),
+`get_document` on all four seeded documents and one spoofed `get_document`. It
+records the expected audit row per call, then compares them in order with the
+`audit_log` rows written after the run started:
+
+| Call | Decision | `disclosed_document_ids` |
+| --- | --- | --- |
+| `whoami` | ALLOW | NULL |
+| `list_accessible_sources` | ALLOW | UUIDs of the caller's listed sources, in listing order |
+| `search_knowledge` | ALLOW | Distinct UUIDs of the returned chunks' documents, in rank order |
+| `get_document`, permitted | ALLOW | That single UUID |
+| `get_document`, forbidden | DENY | NULL |
+| `get_document` with `role`/`user_id` | DENY | NULL |
+
+It also runs the operator query for Salary Guidelines and expects exactly `bob`
+and `carol`, and checks that a disclosure on a DENY row is rejected in a
+rolled-back transaction. Expect one line starting `PASS: 32 audit rows`. Any
+mismatch throws with the expected and actual row. Use `-Endpoint` for another
+server address. The script requires `AUTH_MODE=dev`; OIDC replication is
+manual (use Alice's login token with the README requests and the SQL below).
+
+**5. Manual inspection (optional).** As a trusted operator:
+
+```powershell
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp -c "SELECT a.timestamp,u.subject,a.tool,a.decision,a.reason,a.resource_id,a.disclosed_document_ids FROM audit_log a JOIN users u ON u.id=a.user_id ORDER BY a.timestamp DESC LIMIT 32;"
+```
+
+Rows written before migration 005 keep NULL disclosures.
 
 ### Validation record — 2026-10-21
 
@@ -235,6 +318,54 @@ database was dropped. The development database was **not** migrated; apply 005
 there before running the server. No manual server/demo run was performed for
 this revision.
 
+### Validation record — 2026-10-23 (test and replication steps)
+
+Added `seed/audit-disclosure-demo.ps1` and the steps above. Executed: the script
+parses without errors in Windows PowerShell 5.1; `gofmt -l cmd internal` and
+`go vet ./...` were clean; `go test -count=1 ./...` passed every package except
+`cmd/login`, where `TestLoginPKCECallback` again could not listen on
+127.0.0.1:8765 (environmental, as in the 2026-10-21 record). Docker was not
+running at first, so the SQL suites skipped in that run. Steps 2–5 were then run
+the same day, recorded below.
+
+Step 2: started the existing Compose development database. Migration 004 was present
+and 005 was missing (column count 0, `audit_log` empty). Applied 005 once: BEGIN,
+2× ALTER TABLE, CREATE INDEX, COMMIT. Recheck returned 1. **The development
+database now has migration 005**, which supersedes the 2026-10-21 note that it
+had not been migrated.
+
+Step 3: with `TEST_DATABASE_URL` set, `TestAuditedInjectionIntegration`,
+`TestDocumentsIntegration` and `TestSearchIntegration` ran (not skipped) and
+passed. The full `go test -count=1 ./...` passed every package except `cmd/login`.
+`TestLoginPKCECallback` failed because an unrelated local `python` process was
+listening on 127.0.0.1:8765. That process was left running.
+
+Step 4: `go run ./cmd/ingest --tenant acme` ingested 4 documents (dev-hash-v1,
+128 dimensions). Built and ran the server in `AUTH_MODE=dev` on 127.0.0.1:8080
+with the existing signing keys. `/readyz` returned 200. The script was run with
+Windows PowerShell 5.1 (`powershell -File`). The first two attempts found two
+script bugs, both fixed in `seed/audit-disclosure-demo.ps1`:
+
+- A one-row SQL result came back as a plain string, so `[0]` read the marker as `-`.
+- In 5.1, the expected psql error on stderr became a terminating error under
+  `ErrorActionPreference = 'Stop'`.
+
+The server and audit storage were not at fault in either attempt: each attempt
+wrote its 32 rows before the script failed. The third run printed
+`PASS: 32 audit rows after 2026-10-23 09:10:40.31952+00 match the permission matrix;
+Salary Guidelines reached only bob and carol; DENY disclosures are rejected.` No
+row with the probe request ID `000…0` was committed.
+
+Step 5: the operator query, joined to document titles, matched the expected table.
+Carol listed and searched all four documents. Alice listed and searched Company
+Handbook and Engineering Roadmap, Bob listed and searched Company Handbook and
+Salary Guidelines, and Dave only Company Handbook. Every permitted read disclosed
+exactly its document. All forbidden reads (`not_found_or_forbidden`), spoofed reads
+(`invalid_arguments`) and whoami rows had NULL disclosures. The database held 96
+audit rows (three runs × 32) with 96 distinct request IDs. The rows were kept, and
+the server was stopped. The optional prompt-injection fixture was not applied.
+Not exercised: OIDC mode, PowerShell 7 and the injection demo script.
+
 ## Troubleshooting
 
 - `resource service unavailable` for every otherwise valid tool: inspect server
@@ -243,6 +374,15 @@ this revision.
   successful audit write. Readiness checks connectivity, not schema or audit writes.
 - Missing audit for 401 or malformed JSON: these fail before authenticated tool
   dispatch and intentionally have no persistent tool event.
+- `audit-disclosure-demo.ps1` reports an audit row count mismatch: another client
+  (or a test run) wrote audit rows during the run. Stop other clients and rerun;
+  each run compares only rows newer than the latest row at its start.
+- The script reports `search failed; ingest acme first`: run
+  `go run ./cmd/ingest --tenant acme`. If the injection fixture was applied, the
+  extra Engineering Roadmap text does not change the expected disclosures.
+- `TestLoginPKCECallback` fails with `cannot listen on 127.0.0.1:8765`: another
+  process holds the CLI callback port (`Get-NetTCPConnection -LocalPort 8765`).
+  It is unrelated to audit disclosures; free the port and rerun `./cmd/login`.
 - No hostile search hit: apply the optional fixture to the correct acme database,
   re-ingest, and ensure Engineering Roadmap is readable by Alice. Content hash
   checks intentionally suppress stale chunks immediately after a content edit.

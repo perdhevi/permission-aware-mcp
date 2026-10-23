@@ -86,6 +86,11 @@ whether the target exists. An empty authorized search/list is an ALLOW decision.
 Audit writes add up to two seconds to the bounded read; a write failure withholds
 results and reports `resource service unavailable`.
 
+To replicate disclosures for all four seeded callers and every tool, run
+`./seed/audit-disclosure-demo.ps1` against the same `AUTH_MODE=dev` server; it
+compares each persisted row with the permission matrix and prints one PASS line.
+See [Phase 04 test and replication steps](phase-04.md#test-and-replication-steps).
+
 For automated, isolated tenant fixtures without modifying the demo corpus, run
 `TestAuditedInjectionIntegration` as described in [Phase 04](phase-04.md). To remove
 the optional text, restore Engineering Roadmap content from a saved copy and
