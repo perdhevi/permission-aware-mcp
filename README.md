@@ -23,7 +23,9 @@ guide. Keep these documents updated as the corresponding implementation changes:
 - [Phase 03 — ingestion and permission-filtered retrieval](docs/phase-03.md)
 - [Phase 04 — audit and security demo](docs/phase-04.md)
 - [Phase 05 — Keycloak OIDC/OAuth and discovery](docs/phase-05.md)
-- [Phase 06 — topic isolation PoC (same query, different documents)](docs/phase-06.md)
+
+The [topic isolation PoC](docs/topic-isolation-poc.md) (same query, different
+documents per user) is an optional demo fixture, not an implementation phase.
 
 ## Requirements and setup
 
@@ -226,6 +228,141 @@ API keys or external service, but has lexical overlap and hash collisions rather
 than language understanding. There is no relevance threshold, so unrelated authorized
 chunks may appear. Retrieved text is untrusted data. See the [Phase 03 guide](docs/phase-03.md)
 for ingestion transactions, stale-content handling and full validation instructions.
+
+## Try it: same question, different documents per user
+
+This walkthrough shows the core guarantee from the caller's side. Four users ask
+the same question about one topic, "Project Falcon". Each user gets a different set
+of documents, and a document granted to one user stays invisible to everyone else,
+even when they know its ID.
+
+An optional fixture adds four Falcon documents. Their content all matches the same
+query, so any difference in results comes from permissions, not relevance:
+
+| Document | Who can read it | Granted by |
+| --- | --- | --- |
+| Project Falcon Overview | everyone | all four roles |
+| Project Falcon Technical Design | Alice only | user grant |
+| Project Falcon Staffing Plan | Bob only | user grant |
+| Project Falcon Budget Approval | Carol only | user grant |
+
+The confidential documents are granted to a single *user*, not a role. Carol's
+`executive` role therefore does not reach Alice's or Bob's documents: there is no
+role hierarchy or admin bypass.
+
+### 1. Load the fixture
+
+With the stack from [Requirements and setup](#requirements-and-setup) running and
+the server started with `AUTH_MODE=dev`, run from the repository root:
+
+```powershell
+Get-Content -Raw seed/topic-isolation.sql | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp
+go run ./cmd/ingest --tenant acme
+```
+
+Expect `Ingested 8 documents using dev-hash-v1 (128 dimensions)`.
+
+### 2. Define two helpers
+
+`Use-Caller` mints a development token for a user and keeps it off screen.
+`Invoke-Mcp` sends one MCP `tools/call` as that user. The helpers work in Windows
+PowerShell 5.1 and PowerShell 7.
+
+```powershell
+function Use-Caller([string]$Subject) {
+    $global:McpToken = go run ./cmd/devtoken mint --subject $Subject
+    Write-Host "Now calling as $Subject" -ForegroundColor Cyan
+}
+function Invoke-Mcp([string]$Tool, [hashtable]$Arguments = @{}) {
+    $headers = @{ Authorization = "Bearer $global:McpToken"; Accept = 'application/json, text/event-stream'
+                  'MCP-Protocol-Version' = '2026-07-28'; 'Mcp-Method' = 'tools/call'; 'Mcp-Name' = $Tool }
+    $body = @{ jsonrpc = '2.0'; id = 1; method = 'tools/call'
+               params = @{ name = $Tool; arguments = $Arguments
+                           _meta = @{ 'io.modelcontextprotocol/protocolVersion' = '2026-07-28'
+                                      'io.modelcontextprotocol/clientInfo' = @{ name = 'manual'; version = '1' }
+                                      'io.modelcontextprotocol/clientCapabilities' = @{} } } } | ConvertTo-Json -Depth 8
+    $reply = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Headers $headers -ContentType application/json -Body $body
+    if ($reply.result.isError) { Write-Host "TOOL ERROR: $($reply.result.content.text -join ' ')" -ForegroundColor Red }
+    else { $reply.result.structuredContent }
+}
+```
+
+### 3. Alice asks about Project Falcon
+
+```powershell
+Use-Caller alice
+Invoke-Mcp whoami | Format-List subject, roles
+(Invoke-Mcp search_knowledge @{ query = 'Project Falcon migration'; limit = 10 }).results | Format-Table title, distance
+$design = ((Invoke-Mcp list_accessible_sources).sources | Where-Object title -eq 'Project Falcon Technical Design').document_id
+Invoke-Mcp get_document @{ document_id = $design } | Format-List title, content
+```
+
+Alice's Falcon results are **Overview** and **Technical Design**. Her other documents
+also appear, ranked lower. She reads the Technical Design, and `$design` keeps its ID.
+
+### 4. Bob asks the same question, then tries Alice's document
+
+```powershell
+Use-Caller bob
+(Invoke-Mcp search_knowledge @{ query = 'Project Falcon migration'; limit = 10 }).results | Format-Table title, distance
+Invoke-Mcp get_document @{ document_id = $design }
+Invoke-Mcp get_document @{ document_id = [guid]::NewGuid().ToString() }
+```
+
+Bob's Falcon results are **Overview** and **Staffing Plan**, with no Technical Design.
+Reading Alice's document by its real ID returns `TOOL ERROR: resource not found`,
+the same answer as for a random, nonexistent ID. Bob cannot even learn that the
+document exists.
+
+### 5. Carol and Dave
+
+```powershell
+Use-Caller carol
+(Invoke-Mcp search_knowledge @{ query = 'Project Falcon migration'; limit = 10 }).results | Format-Table title, distance
+Invoke-Mcp get_document @{ document_id = $design }
+
+Use-Caller dave
+(Invoke-Mcp search_knowledge @{ query = 'Project Falcon migration'; limit = 10 }).results | Format-Table title, distance
+```
+
+Carol gets **Overview** and **Budget Approval**, and she is denied Alice's document
+even as an executive. Dave gets the **Overview** only.
+
+| Caller | Role | Falcon documents returned for the same query |
+| --- | --- | --- |
+| Alice | engineering | Overview, Technical Design |
+| Bob | hr | Overview, Staffing Plan |
+| Carol | executive | Overview, Budget Approval |
+| Dave | employee | Overview |
+
+To try other pairs, take the ID of Bob's Staffing Plan or Carol's Budget Approval as
+its owner, then switch callers and read it. `Invoke-Mcp list_accessible_sources`
+shows each caller's full document list.
+
+### 6. Check who received what
+
+Every successful call records the document IDs it returned in the audit log. As the
+operator, ask which users have received each Falcon document:
+
+```powershell
+"SELECT DISTINCT d.title, u.subject FROM audit_log a JOIN users u ON u.id = a.user_id JOIN documents d ON d.id = ANY(a.disclosed_document_ids) WHERE d.source LIKE 'falcon-%' ORDER BY 1, 2;" | docker compose exec -T postgres psql -X -U permission_mcp -d permission_mcp
+```
+
+Each confidential document lists only its owner. The Overview lists every caller
+who searched.
+
+### 7. Automated check and cleanup
+
+`./seed/topic-isolation-demo.ps1` runs the same comparison for all four callers,
+cross-checks direct reads of every Falcon document, and prints `PASS` or `FAIL`.
+The repository integration tests expect the original four-document matrix, so
+remove the fixture before running them:
+
+```powershell
+Get-Content -Raw seed/topic-isolation-cleanup.sql | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U permission_mcp -d permission_mcp
+```
+
+Design notes, the validation record and limitations are in the [topic isolation PoC guide](docs/topic-isolation-poc.md).
 
 ## Architecture and next phase
 

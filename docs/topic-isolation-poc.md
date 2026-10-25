@@ -1,4 +1,8 @@
-# Phase 06 — Topic isolation PoC (same query, different documents)
+# Topic isolation PoC (same query, different documents)
+
+An optional demo fixture built on the Phase 02–05 implementation. It is not one of
+the numbered implementation phases; Phase 6 in `PROJECT_SPEC.md` (defense in depth)
+remains deferred.
 
 ## Scope and outcome
 
@@ -20,7 +24,7 @@ and search.
 | `seed/topic-isolation.sql` | Optional, rerunnable fixture: four `falcon-*` documents in tenant `acme`; overview granted to all four roles; Technical Design → `alice`, Staffing Plan → `bob`, Budget Approval → `carol`, each as a user grant with no role grant. |
 | `seed/topic-isolation-cleanup.sql` | Deletes the four `falcon-*` documents; ACL rows and chunks cascade. |
 | `seed/topic-isolation-demo.ps1` | Mints dev tokens for the four callers, runs one search per caller, prints the Falcon titles each receives, prints a caller × document direct-read matrix, and fails unless results match the expected matrix. |
-| `README.md` | Phase guide link. |
+| `README.md` | Link to this guide and the manual walkthrough "Try it: same question, different documents per user": fixture load, two PowerShell helpers, caller-by-caller search and cross-reads, audit query, cleanup. |
 
 ## Design decisions
 
@@ -95,6 +99,14 @@ returns 0. Re-ingesting is not needed after cleanup, because chunks cascade.
 - After cleanup: 0 Falcon documents, 4 chunks remaining, and
   `go test -count=1 ./internal/repository/...` passed.
 - The database was left **without** the fixture.
+
+Manual README walkthrough (2026-10-25, Windows PowerShell 5.1): all seven code blocks of
+the README section were extracted and run in order, unchanged. Results matched the README:
+Falcon results Overview + Technical Design (Alice), + Staffing Plan (Bob), + Budget
+Approval (Carol), Overview only (Dave). Bob's and Carol's reads of Alice's document and
+Bob's random-UUID read all returned `resource not found`. The audit query listed each
+confidential document only for its owner and the Overview for all four callers. The
+final block removed the fixture.
 
 Not exercised: OIDC mode, PowerShell 7.
 
