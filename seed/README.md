@@ -96,6 +96,16 @@ Expect `COMMIT`. Existing audit rows keep NULL disclosures. Without this migrati
 the current server cannot write audit records and withholds every tool result with
 `resource service unavailable`. See [Phase 04](../docs/phase-04.md).
 
+## Topic isolation PoC (Phase 6)
+
+The optional [topic-isolation fixture](topic-isolation.sql) adds four "Project Falcon"
+documents: an overview for every role and three confidential documents, each
+granted to a single user (Alice, Bob, Carol). Re-ingest after applying, run
+`./seed/topic-isolation-demo.ps1`, and remove it with
+[topic-isolation-cleanup.sql](topic-isolation-cleanup.sql). Repository integration
+tests expect the original matrix, so clean up before running them. See
+[Phase 06](../docs/phase-06.md).
+
 ## Local Keycloak identities (Phase 5)
 
 Start `docker compose --profile oidc up -d`, wait for the realm import, then run:

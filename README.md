@@ -23,6 +23,7 @@ guide. Keep these documents updated as the corresponding implementation changes:
 - [Phase 03 — ingestion and permission-filtered retrieval](docs/phase-03.md)
 - [Phase 04 — audit and security demo](docs/phase-04.md)
 - [Phase 05 — Keycloak OIDC/OAuth and discovery](docs/phase-05.md)
+- [Phase 06 — topic isolation PoC (same query, different documents)](docs/phase-06.md)
 
 ## Requirements and setup
 
@@ -151,13 +152,24 @@ and remove their dedicated fixtures without changing seeded users.
 
 ## Read authorized documents
 
-Use the same `$body` and `$headers` from the PowerShell example above:
+Use the same `$headers` from the PowerShell example above:
 
 ```powershell
 $headers['Mcp-Name'] = 'list_accessible_sources'
-$request = $body | ConvertFrom-Json -AsHashtable
-$request.params.name = 'list_accessible_sources'
-$request.params.arguments = @{ limit = 20 }
+$request = @{
+  jsonrpc = '2.0'
+  id = 1
+  method = 'tools/call'
+  params = @{
+    name = 'list_accessible_sources'
+    arguments = @{ limit = 20 }
+    _meta = @{
+      'io.modelcontextprotocol/protocolVersion' = '2026-07-28'
+      'io.modelcontextprotocol/clientInfo' = @{ name = 'powershell-demo'; version = '1' }
+      'io.modelcontextprotocol/clientCapabilities' = @{}
+    }
+  }
+}
 $body = $request | ConvertTo-Json -Depth 8
 $sources = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Headers $headers -ContentType application/json -Body $body
 $sources.result.structuredContent.sources
@@ -171,7 +183,7 @@ $document = Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Heade
 $document.result.structuredContent
 ```
 
-This example requires PowerShell 7. Listing defaults to 20, accepts 1–100, and
+This example runs on Windows PowerShell 5.1 and PowerShell 7. Listing defaults to 20, accepts 1–100, and
 returns only document UUIDs and titles in title/UUID order. Direct reads accept
 a UUID and default to 12000 Unicode characters (1–50000), returning a `truncated`
 flag. Missing and forbidden documents both produce the MCP tool error
